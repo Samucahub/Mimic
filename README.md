@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)
 
-**On a stage where everyone thinks they're the star. But the only thing they are is the show.**
+**On stage, everyone thinks they're the star. But the only thing they are, is the show.**
 
 *Every door is a mask. The audience is watching.*
 
@@ -278,6 +278,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
