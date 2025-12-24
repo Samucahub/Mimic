@@ -14,9 +14,9 @@
 
 ---
 
-## 🌟 Features
+## Features
 
-### 🔌 Service Emulation
+### Service Emulation
 - **SSH** - Full interactive shell with realistic filesystem
 - **FTP** - File transfer protocol emulation
 - **HTTP** - Web server honeypot
@@ -24,14 +24,14 @@
 - **MySQL** - Database service emulation
 - **RDP** - Remote Desktop Protocol (planned)
 
-### 🛡️ Security Features
+### Security Features
 - **Credential Harvesting** - Capture usernames and passwords
 - **Session Logging** - JSON-formatted logs for analysis
 - **Human Behavior Simulation** - Realistic response delays
 - **Customizable Authentication** - Accept any credentials or enforce specific ones
 - **Port Flexibility** - Configure any port for any service
 
-### 📊 Advanced Capabilities
+### Advanced Capabilities
 - **Multi-OS Simulation** - Convincing banners for different operating systems
 - **Interactive Shell** - Command execution and file exploration
 - **Filesystem Virtualization** - Realistic directory structures
@@ -40,7 +40,7 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -127,7 +127,7 @@ services:
 
 ---
 
-## 📖 Usage Examples
+## Usage Examples
 
 ### Honeypot Mode (Accept Any Credentials)
 
@@ -165,7 +165,7 @@ nmap -sV 192.168.1.100
 
 ---
 
-## 🔍 Monitoring & Logs
+## Monitoring & Logs
 
 ### Log Files
 
@@ -196,7 +196,7 @@ logs/
 
 ---
 
-## 🛠️ Development
+## Development
 
 ### Project Structure
 
@@ -230,7 +230,7 @@ mimic/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please:
 
@@ -242,13 +242,13 @@ Contributions are welcome! Please:
 
 ---
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🔒 Security
+## Security
 
 Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for reporting guidelines.
 
@@ -269,7 +269,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
   </a>
 </p>
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **asyncssh** - Robust SSH protocol implementation
 - **Pygame** - Visual interface framework
@@ -278,7 +278,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 
 ---
 
-## 📧 Contact
+## Contact
 
 **Author:** The Architect  
 **GitHub:** [@Samucahub](https://github.com/Samucahub)  
@@ -293,6 +293,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
