@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 The Architect
+Copyright (c) 2025 Samucahub
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,55 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+ADDITIONAL TERMS AND CONDITIONS FOR HONEYPOT SOFTWARE:
+
+1. AUTHORIZED USE ONLY
+   This software is intended exclusively for:
+   - Educational purposes
+   - Authorized security research
+   - Deployment on networks you own or have explicit permission to monitor
+   - Controlled laboratory environments
+
+2. PROHIBITED USES
+   You may NOT use this software to:
+   - Deploy honeypots on unauthorized networks
+   - Intercept communications without proper authorization
+   - Violate any applicable laws or regulations
+   - Conduct malicious activities
+   - Harm individuals or organizations
+
+3. LEGAL COMPLIANCE
+   Users must ensure compliance with all applicable laws and regulations,
+   including but not limited to:
+   - Computer Fraud and Abuse Act (CFAA) in the United States
+   - Computer Misuse Act in the United Kingdom
+   - General Data Protection Regulation (GDPR) in the European Union
+   - Local and national cybersecurity laws
+
+4. DATA PROTECTION
+   When deploying this honeypot:
+   - Ensure proper data handling and storage
+   - Implement appropriate security measures
+   - Respect privacy rights
+   - Comply with data protection regulations
+
+5. LIABILITY DISCLAIMER
+   The authors and contributors of this software:
+   - Are NOT responsible for any misuse of this software
+   - Are NOT liable for any damages resulting from unauthorized use
+   - Provide this software "AS IS" without warranty of any kind
+   - Disclaim all liability for legal consequences of improper use
+
+6. ETHICAL USE
+   Users are expected to:
+   - Use this software ethically and responsibly
+   - Obtain proper authorization before deployment
+   - Respect the security and privacy of others
+   - Use collected data solely for legitimate security purposes
+
+BY USING THIS SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ AND UNDERSTOOD
+THESE TERMS AND AGREE TO BE BOUND BY THEM. IF YOU DO NOT AGREE, DO NOT USE
+THIS SOFTWARE.
