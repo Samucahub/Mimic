@@ -16,12 +16,6 @@
 
 ## 🌟 Features
 
-### 🎨 Visual Configurator
-- **Theatrical Black & White Design** - Inspired by mime aesthetics
-- **Real-time Configuration** - Visual interface built with Pygame
-- **Live Activity Monitor** - Watch attackers in real-time
-- **OS Templates** - Simulate Ubuntu, Debian, CentOS, Windows Server, or Kali Linux
-
 ### 🔌 Service Emulation
 - **SSH** - Full interactive shell with realistic filesystem
 - **FTP** - File transfer protocol emulation
@@ -284,3 +278,4 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
