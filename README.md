@@ -88,7 +88,7 @@ python main.py
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Example Configuration
 
@@ -258,7 +258,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 
 <a href="https://www.buymeacoffee.com/samunana" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
 
-## :rocket: Follow Me
+## Follow Me
 
 <p>
   <a href="https://x.com/CyberSamu_">
@@ -293,6 +293,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
