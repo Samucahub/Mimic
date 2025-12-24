@@ -254,6 +254,21 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 
 ---
 
+## :coffee: Buy Me a Coffee
+
+<a href="https://www.buymeacoffee.com/samunana" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
+
+## :rocket: Follow Me
+
+<p>
+  <a href="https://x.com/CyberSamu_">
+        <img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=twitter&logoColor=white"/>
+  </a>
+  <a href="https://www.linkedin.com/in/samuel-rocha-3a630731a/">
+        <img src="https://img.shields.io/static/v1?message=LinkedIn&logo=linkedin&label=&color=0077B5&logoColor=white&labelColor=&style=for-the-badge" height="35" alt="linkedin logo"  />
+  </a>
+</p>
+
 ## 🙏 Acknowledgments
 
 - **asyncssh** - Robust SSH protocol implementation
@@ -265,7 +280,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 
 ## 📧 Contact
 
-**Author:** The Architect
+**Author:** The Architect  
 **GitHub:** [@Samucahub](https://github.com/Samucahub)  
 **Project:** [MIMIC Honeypot](https://github.com/Samucahub/mimic)
 
@@ -278,6 +293,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
