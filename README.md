@@ -265,11 +265,10 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 
 ## 📧 Contact
 
-**Author:** Samucahub  
+**Author:** The Architect
 **GitHub:** [@Samucahub](https://github.com/Samucahub)  
 **Project:** [MIMIC Honeypot](https://github.com/Samucahub/mimic)
 
----
 
 <div align="center">
 
@@ -278,4 +277,5 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
