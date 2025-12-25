@@ -68,7 +68,7 @@ pip install pygame pyyaml asyncssh
 #### Option 1: Visual Configurator (Recommended)
 
 ```bash
-python configurator.py
+python mimic.py
 ```
 
 1. Configure identity (username, password, hostname)
@@ -157,7 +157,7 @@ Only accepts the configured username and password. Rejects all others.
 ssh admin@192.168.1.100 -p 22
 
 # FTP Connection
-ftp 192.168.1.100 21
+ftp 192.168.1.100
 
 # Scan with Nmap
 nmap -sV 192.168.1.100
@@ -203,7 +203,7 @@ logs/
 ```
 mimic/
 ├── main.py                 # Entry point
-├── configurator.py         # Visual GUI
+├── mimic.py                # Visual GUI
 ├── config/
 │   ├── honeypot.yaml      # Main configuration
 │   └── templates/         # OS templates
@@ -293,6 +293,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
