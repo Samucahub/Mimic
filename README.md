@@ -60,7 +60,7 @@ git clone https://github.com/Samucahub/mimic.git
 cd mimic
 
 # Install dependencies
-pip install pygame pyyaml asyncssh
+pip install -r requirements.txt
 ```
 
 ### Running MIMIC
@@ -293,6 +293,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
