@@ -48,6 +48,7 @@
 
 ### Prerequisites
 
+**Windows:**
 ```bash
 # Python 3.11 or higher
 python --version
@@ -56,8 +57,24 @@ python --version
 pip install -r requirements.txt
 ```
 
+**Linux/Ubuntu:**
+```bash
+# Python 3.11 or higher
+python3 --version
+
+
+# Or manual installation
+sudo apt-get update
+sudo apt-get install python3 python3-pip python3-pygame
+sudo pip3 install pyyaml asyncssh pygame
+
+# For ports below 1024, you'll need root privileges
+sudo python3 mimic.py
+```
+
 ### Installation
 
+**Windows:**
 ```bash
 # Clone the repository
 git clone https://github.com/Samucahub/mimic.git
@@ -67,12 +84,42 @@ cd mimic
 pip install -r requirements.txt
 ```
 
+**Ubuntu/Linux:**
+```bash
+# Clone the repository
+git clone https://github.com/Samucahub/mimic.git
+cd mimic
+
+sudo pip3 install -r requirements.txt
+
+# Option 2: Manual install
+# Windows
+pip install pygame pyyaml asyncssh
+
+# Linux
+pip3 install pygame pyyaml asyncssh
+```
+
 ### Running MIMIC
 
 #### Option 1: Visual Configurator (Recommended)
 
+**Windows:**
 ```bash
 python mimic.py
+```
+
+**Linux:**
+```bash
+# Normal ports (>1024)
+python3 mimic.py
+
+# For privileged ports (22, 21, 80, 23)
+sudo python3 mimic.py
+
+# Or use the startup script
+chmod +x start_mimic.sh
+./start_mimic.sh
 ```
 
 1. Configure identity (username, password, hostname)
@@ -297,6 +344,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
