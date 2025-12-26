@@ -6,6 +6,7 @@ import random
 import subprocess
 import threading
 import time
+import platform
 from pathlib import Path
 
 pygame.init()
@@ -407,22 +408,26 @@ class MimicConfigurator:
                 Path("logs").mkdir(exist_ok=True)
                 log_file = open(log_file_path, "w", encoding='utf-8', errors='replace')
                 
-                python_exe = "C:/Users/Samur/Python/python.exe"
+                python_exe = sys.executable
                 
                 self.log_messages.append(f"[INFO] Using Python: {python_exe}")
+                self.log_messages.append(f"[INFO] Platform: {platform.system()}")
                 
                 env = os.environ.copy()
                 env['PYTHONIOENCODING'] = 'utf-8'
                 
-                self.honeypot_process = subprocess.Popen(
-                    [python_exe, "main.py"],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    env=env,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-                )
+                kwargs = {
+                    'stdout': log_file,
+                    'stderr': subprocess.STDOUT,
+                    'text': True,
+                    'bufsize': 1,
+                    'env': env
+                }
+                
+                if platform.system() == 'Windows':
+                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                
+                self.honeypot_process = subprocess.Popen([python_exe, "main.py"], **kwargs)
                 
                 self.log_messages.append("[OK] Honeypot started successfully")
                 self.log_messages.append("[WAIT] Watching log file...")
@@ -482,11 +487,43 @@ class MimicConfigurator:
                     
             self.honeypot_process = None
         
+        self.log_messages.append("[INFO] Killing processes on honeypot ports...")
         try:
             import os
-            os.system('taskkill /F /FI "WINDOWTITLE eq main.py*" >nul 2>&1')
-        except:
-            pass
+            import signal
+            
+            if platform.system() == 'Windows':
+                os.system('taskkill /F /FI "WINDOWTITLE eq main.py*" >nul 2>&1')
+                
+                ports = [21, 22, 23, 80, 3306, 3389]
+                for port in ports:
+                    result = os.popen(f'netstat -ano | findstr ":{port} "').read()
+                    for line in result.split('\n'):
+                        if 'LISTENING' in line:
+                            parts = line.split()
+                            if len(parts) >= 5:
+                                pid = parts[-1]
+                                try:
+                                    os.system(f'taskkill /F /PID {pid} >nul 2>&1')
+                                    self.log_messages.append(f"[OK] Killed process on port {port} (PID: {pid})")
+                                except:
+                                    pass
+            else:
+                os.system('pkill -f "main.py" 2>/dev/null')
+                
+                ports = [21, 22, 23, 80, 3306, 3389]
+                for port in ports:
+                    result = os.popen(f'lsof -ti:{port} 2>/dev/null').read().strip()
+                    if result:
+                        for pid in result.split('\n'):
+                            if pid:
+                                try:
+                                    os.kill(int(pid), signal.SIGKILL)
+                                    self.log_messages.append(f"[OK] Killed process on port {port} (PID: {pid})")
+                                except:
+                                    pass
+        except Exception as e:
+            self.log_messages.append(f"[WARN] Error killing port processes: {str(e)[:50]}")
             
         self.honeypot_running = False
         time.sleep(0.5)
