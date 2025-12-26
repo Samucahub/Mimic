@@ -12,6 +12,10 @@
 
 </div>
 
+<p align="center">
+  <img src="/assets/mimic_banner.png" alt="banner"/>
+</p>
+
 ---
 
 ## Features
@@ -293,6 +297,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
