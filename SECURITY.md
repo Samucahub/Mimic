@@ -1,14 +1,14 @@
 # Security Policy
 
-## 🔒 Security Overview
+## Security Overview
 
 MIMIC is a honeypot framework designed to capture and analyze malicious activity. As such, security is paramount both in the software itself and in how it is deployed.
 
 ---
 
-## ⚠️ Deployment Security Guidelines
+## Deployment Security Guidelines
 
-### 🛡️ Network Isolation
+### Network Isolation
 
 **CRITICAL:** Always deploy MIMIC in an isolated network segment.
 
@@ -18,14 +18,14 @@ MIMIC is a honeypot framework designed to capture and analyze malicious activity
 - ✅ Prevent lateral movement to production systems
 - ❌ **NEVER** deploy on production networks without isolation
 
-### 🔐 Access Control
+### Access Control
 
 - Use strong, unique credentials for the host system
 - Implement IP whitelisting for administrative access
 - Regularly rotate honeypot credentials
 - Monitor admin access logs
 
-### 📊 Data Protection
+### Data Protection
 
 **Captured data may contain sensitive information:**
 
@@ -35,7 +35,7 @@ MIMIC is a honeypot framework designed to capture and analyze malicious activity
 - Comply with GDPR and applicable data protection laws
 - Implement data retention policies
 
-### 🚨 Monitoring
+### Monitoring
 
 - Set up alerting for unusual honeypot activity
 - Monitor system resources (CPU, memory, disk)
@@ -45,7 +45,7 @@ MIMIC is a honeypot framework designed to capture and analyze malicious activity
 
 ---
 
-## 🐛 Reporting Security Vulnerabilities
+## Reporting Security Vulnerabilities
 
 ### Responsible Disclosure
 
@@ -88,7 +88,7 @@ If you discover a security vulnerability in MIMIC, please follow responsible dis
 
 ---
 
-## 🎯 Known Security Considerations
+## Known Security Considerations
 
 ### By Design
 
@@ -141,7 +141,7 @@ iptables -A OUTPUT -j DROP
 
 ---
 
-## 🔍 Security Best Practices
+## Security Best Practices
 
 ### Deployment Checklist
 
@@ -186,7 +186,7 @@ iptables -A OUTPUT -j DROP
 
 ---
 
-## 📚 Security Resources
+## Security Resources
 
 ### Honeypot Security
 - [The Honeynet Project](https://www.honeynet.org/)
@@ -218,13 +218,13 @@ iptables -A OUTPUT -j DROP
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 We thank the security research community for responsible disclosure practices and contributions to improving MIMIC's security.
 
 ---
 
-## 📧 Contact
+## Contact
 
 **Security Team:** [GitHub Security Advisories](https://github.com/Samucahub/mimic/security/advisories)
 
@@ -239,3 +239,4 @@ We thank the security research community for responsible disclosure practices an
 *Deploy responsibly. Monitor vigilantly. Report ethically.*
 
 </div>
+
