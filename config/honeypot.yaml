@@ -1,30 +1,33 @@
+version: '1.0'
+name: 'MIMIC Honeypot'
+system:
+  username: 'admin'
+  password: 'admin123'
+  hostname: 'dev-server'
+  os_template: 'Ubuntu'
 options:
-  any_auth: false
+  any_auth: true
+  human_patterns: true
   enable_logging: true
-  human_patterns: false
   log_retention_days: 7
 security:
   enabled: true
-  ip_blocking:
-    auto_block_failed_logins: 10
   rate_limits:
-    block_duration_minutes: 60
     max_connections_per_minute: 60
     max_failed_logins: 10
+    block_duration_minutes: 60
     window_seconds: 60
+  ip_blocking:
+    auto_block_failed_logins: 10
 services:
-  '22':
-    banner: SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3
-    command_timeout: 30
-    enable_history: true
-    enable_scp: true
+  22:
+    type: 'ssh'
     enabled: true
+    banner: 'SSH-2.0-OpenSSH_7.6p1'
+    command_timeout: 30
     max_session_time: 3600
-    simulate_bash: true
-    simulate_sudo: true
-    type: ssh
-system:
-  hostname: stage-server
-  os_template: Ubuntu
-  password: admin123
-  username: admin
+behavior:
+  response_delay:
+    min: 0.1
+    max: 1.0
+  error_rate: 0.05

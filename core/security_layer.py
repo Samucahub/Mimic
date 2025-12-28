@@ -19,6 +19,9 @@ class SecurityLayer:
         self.logger = logging.getLogger('security')
         self.logger.setLevel(logging.DEBUG)  # Aumentar nível de log para DEBUG
         
+        self.enabled = config.get('enabled', True)
+        self.logger.debug(f"Security layer enabled: {self.enabled}")
+
         # Adicionar handler para console
         if not self.logger.handlers:
             console_handler = logging.StreamHandler()
@@ -38,6 +41,13 @@ class SecurityLayer:
         
         self.logger.debug(f"Security layer initialized with config: {self.rate_limit_config}")
         self.logger.debug(f"Max failed logins: {self.rate_limit_config.get('max_failed_logins', 10)}")
+        
+        # Se segurança desabilitada, limpa todos os bloqueios
+        if not self.enabled:
+            self.logger.info("Security disabled - clearing all blocks")
+            self.blocked_ips.clear()
+            self.temp_blocked.clear()
+            self.failed_attempts.clear()
         
         self.cleanup_task = asyncio.create_task(self.periodic_cleanup())
     
@@ -60,12 +70,14 @@ class SecurityLayer:
         """Verifica se IP está autorizado"""
         self.logger.debug(f"Checking if IP {ip} is allowed")
         
-        # Verifica bloqueio permanente
+        if not self.enabled:
+            self.logger.debug(f"Security disabled, allowing IP {ip}")
+            return True
+
         if ip in self.blocked_ips:
             self.logger.warning(f"IP {ip} is permanently blocked")
             return False
         
-        # Verifica bloqueio temporário
         if ip in self.temp_blocked:
             block_until = self.temp_blocked[ip]
             if datetime.now() < block_until:
@@ -73,27 +85,11 @@ class SecurityLayer:
                 self.logger.warning(f"IP {ip} is temporarily blocked for {remaining.total_seconds():.0f} more seconds")
                 return False
             else:
-                # Bloqueio expirou
                 del self.temp_blocked[ip]
                 self.logger.info(f"Temporary block for IP {ip} has expired")
         
-        # Verifica lista de bloqueio por rede
-        try:
-            ip_obj = ipaddress.ip_address(ip)
-            for network_str in self.geo_block_list:
-                network = ipaddress.ip_network(network_str)
-                if ip_obj in network:
-                    self.logger.warning(f"IP {ip} blocked by network rule: {network_str}")
-                    return False
-        except ValueError:
-            self.logger.warning(f"Invalid IP address: {ip}")
-            return False
-        
-        # Verifica rate limiting
         if not self.check_rate_limit(ip):
-            self.logger.warning(f"IP {ip} exceeded rate limit")
-            block_duration = self.rate_limit_config.get('block_duration_minutes', 5)
-            self.temp_block_ip(ip, minutes=block_duration)
+            self.logger.warning(f"IP {ip} exceeded rate limit - blocking connection")
             return False
         
         self.logger.debug(f"IP {ip} is allowed")
@@ -101,6 +97,10 @@ class SecurityLayer:
     
     def check_rate_limit(self, ip: str) -> bool:
         """Verifica rate limiting por IP"""
+        if not self.enabled:
+            self.logger.debug(f"Security disabled, rate limit check passed for IP {ip}")
+            return True
+        
         now = datetime.now()
         
         # Limpa tentativas antigas
@@ -143,13 +143,17 @@ class SecurityLayer:
     
     def record_failed_attempt(self, ip: str):
         """Regista tentativa falhada"""
+        if not self.enabled:
+            self.logger.debug(f"Security disabled, not recording failed attempt from {ip}")
+            return
+        
         self.failed_attempts[ip].append(datetime.now())
         recent_count = len([attempt for attempt in self.failed_attempts[ip] 
                            if attempt > datetime.now() - timedelta(seconds=60)])
         
         self.logger.warning(f"Recorded failed attempt from IP {ip} (total recent: {recent_count})")
         
-        # Auto-block se muitas tentativas
+        # Auto-block se muitas tentativas (APENAS se security enabled)
         auto_block_threshold = self.block_config.get('auto_block_failed_logins', 
                                                     self.rate_limit_config.get('max_failed_logins', 10))
         
@@ -160,6 +164,10 @@ class SecurityLayer:
     
     def temp_block_ip(self, ip: str, minutes: int = 60):
         """Bloqueia IP temporariamente"""
+        if not self.enabled:
+            self.logger.debug(f"Security disabled, not blocking IP {ip}")
+            return
+            
         block_duration = self.rate_limit_config.get('block_duration_minutes', minutes)
         block_until = datetime.now() + timedelta(minutes=block_duration)
         self.temp_blocked[ip] = block_until

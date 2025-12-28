@@ -198,9 +198,8 @@ class MimicConfigurator:
 
         # Configurações SSH (apenas se SSH estiver habilitado)
         self.ssh_banner = InputBox(100, 240, 470, 35, "SSH Banner", "SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3")
-        self.enable_scp = Checkbox(100, 340, "Enable SCP file transfers", True)
-        self.command_timeout = InputBox(350, 340, 100, 30, "Cmd timeout (s)", "30")
-        self.session_time = InputBox(470, 340, 100, 30, "Max session (s)", "3600")
+        self.command_timeout = InputBox(100, 370, 150, 30, "Cmd timeout (s)", "30")
+        self.session_time = InputBox(270, 370, 150, 30, "Max session (s)", "3600")
         
         # REMOVIDO: Simulation Features (agora são automáticas)
         
@@ -337,10 +336,9 @@ class MimicConfigurator:
             
             self.ssh_banner.draw(self.screen, self.small)
             
-            session_label = self.font.render("SESSION & FILES", True, COLORS['white'])
+            session_label = self.font.render("SESSION SETTINGS", True, COLORS['white'])
             self.screen.blit(session_label, (100, 300))
             
-            self.enable_scp.draw(self.screen, self.small)
             self.command_timeout.draw(self.screen, self.small)
             self.session_time.draw(self.screen, self.small)
         
@@ -477,7 +475,6 @@ class MimicConfigurator:
                     ssh_enabled = any(s.name == "SSH" and s.enabled for s in self.services)
                     if ssh_enabled:
                         self.ssh_banner.handle_event(e)
-                        self.enable_scp.handle_event(e)
                         self.command_timeout.handle_event(e)
                         self.session_time.handle_event(e)
                     self.back_btn.handle_event(e)
@@ -541,15 +538,9 @@ class MimicConfigurator:
                 }
                 
                 if s.name == "SSH":
-                    # Sempre habilitar features de simulação
                     service_config.update({
-                        "enable_scp": self.enable_scp.checked,
                         "command_timeout": int(self.command_timeout.text) if self.command_timeout.text.isdigit() else 30,
-                        "max_session_time": int(self.session_time.text) if self.session_time.text.isdigit() else 3600,
-                        # Sempre habilitado - remover opções do usuário
-                        "simulate_sudo": True,
-                        "simulate_bash": True,
-                        "enable_history": True
+                        "max_session_time": int(self.session_time.text) if self.session_time.text.isdigit() else 3600
                     })
                 
                 config["services"][str(port)] = service_config
@@ -563,13 +554,23 @@ class MimicConfigurator:
         return True
 
     def _clean_banner(self, banner: str) -> str:
-        """Limpa o banner para remover caracteres inválidos"""
         if not banner:
-            return ""
-        # Remover quebras de linha e espaços extras
-        cleaned = banner.strip().replace('\r', '').replace('\n', ' ')
-        # Remover múltiplos espaços
+            return "SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3"
+
+        if not banner.startswith('SSH-2.0-'):
+            banner = 'SSH-2.0-' + banner
+
+        import string
+        printable = set(string.printable)
+        cleaned = ''.join(filter(lambda x: x in printable, banner))
+        
+        cleaned = cleaned.replace('\r', '').replace('\n', ' ').strip()
+        
         cleaned = ' '.join(cleaned.split())
+        
+        if len(cleaned) > 255:
+            cleaned = cleaned[:255]
+        
         return cleaned
 
     def _get_service_banner(self, service_name):
