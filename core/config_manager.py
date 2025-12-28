@@ -22,21 +22,43 @@ class ConfigManager:
         default_config = {
             'version': '1.0',
             'name': 'MIMIC Honeypot',
-            'os_profile': {
-                'name': 'Ubuntu',
-                'version': '18.04.6 LTS',
-                'hostname': 'dev-server'
+            'system': {
+                'username': 'admin',
+                'password': 'admin123',
+                'hostname': 'dev-server',
+                'os_template': 'Ubuntu'
+            },
+            'options': {
+                'any_auth': True,
+                'human_patterns': True,
+                'enable_logging': True,
+                'log_retention_days': 7
+            },
+            'security': {
+                'enabled': True,
+                'rate_limits': {
+                    'max_connections_per_minute': 60,
+                    'max_failed_logins': 10,
+                    'block_duration_minutes': 60,
+                    'window_seconds': 60
+                },
+                'ip_blocking': {
+                    'auto_block_failed_logins': 10
+                }
             },
             'services': {
-                22: {'type': 'ssh', 'banner': 'SSH-2.0-OpenSSH_7.6p1'},
-                80: {'type': 'http', 'banner': 'Apache/2.4.29'}
+                22: {
+                    'type': 'ssh',
+                    'enabled': True,
+                    'banner': 'SSH-2.0-OpenSSH_7.6p1',
+                    'enable_scp': True,
+                    'command_timeout': 30,
+                    'max_session_time': 3600
+                }
             },
             'behavior': {
                 'response_delay': {'min': 0.1, 'max': 1.0},
                 'error_rate': 0.05
-            },
-            'security': {
-                'rate_limits': {'max_connections_per_minute': 60}
             }
         }
         
@@ -53,17 +75,64 @@ class ConfigManager:
                 self.config_cache = yaml.safe_load(f)
             
             self.validate_config()
+            
+            # Garantir que as seções obrigatórias existam
+            required_sections = ['system', 'options', 'security', 'services']
+            for section in required_sections:
+                if section not in self.config_cache:
+                    if section == 'system':
+                        self.config_cache[section] = {
+                            'username': 'admin',
+                            'password': 'admin123',
+                            'hostname': 'dev-server',
+                            'os_template': 'Ubuntu'
+                        }
+                    elif section == 'options':
+                        self.config_cache[section] = {
+                            'any_auth': True,
+                            'human_patterns': True,
+                            'enable_logging': True,
+                            'log_retention_days': 7
+                        }
+                    elif section == 'security':
+                        self.config_cache[section] = {
+                            'enabled': True,
+                            'rate_limits': {
+                                'max_connections_per_minute': 60,
+                                'max_failed_logins': 10,
+                                'block_duration_minutes': 60,
+                                'window_seconds': 60
+                            }
+                        }
+                    elif section == 'services':
+                        self.config_cache[section] = {}
+            
             return self.config_cache
             
         except Exception as e:
             self.logger.error(f"Failed to load config: {e}")
-            raise
+            # Criar configuração padrão se houver erro
+            self.create_default_config()
+            return self.load_config(force_reload=True)
     
     def save_config(self, config: Dict[str, Any]):
         """Salva configuração no arquivo"""
         try:
             # Valida antes de salvar
             self.validate_config_structure(config)
+            
+            # Garantir que a estrutura de segurança está completa
+            if 'security' in config:
+                if 'rate_limits' not in config['security']:
+                    config['security']['rate_limits'] = {}
+                
+                rate_limits = config['security']['rate_limits']
+                if 'max_failed_logins' not in rate_limits:
+                    rate_limits['max_failed_logins'] = 10
+                if 'block_duration_minutes' not in rate_limits:
+                    rate_limits['block_duration_minutes'] = 60
+                if 'window_seconds' not in rate_limits:
+                    rate_limits['window_seconds'] = 60
             
             with open(self.config_file, 'w') as f:
                 yaml.dump(config, f, default_flow_style=False, sort_keys=False)
@@ -150,7 +219,7 @@ class ConfigManager:
     
     def validate_config_structure(self, config: Dict[str, Any]):
         """Valida estrutura básica da configuração"""
-        required_sections = ['version', 'name', 'services']
+        required_sections = ['system', 'options', 'security', 'services']
         
         for section in required_sections:
             if section not in config:

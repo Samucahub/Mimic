@@ -2,16 +2,23 @@ import asyncio
 import asyncssh
 import json
 import random
+import os
 from datetime import datetime
 from pathlib import Path
 
+
 class SSHService:
     
-    def __init__(self, port: int, config: dict):
+    def __init__(self, port: int, config: dict, security_layer=None):
         self.port = port
         self.config = config
+        self.security = security_layer
         self.banner = config.get('banner', 'SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3')
         
+        self.security_enabled = True
+        if security_layer:
+            self.security_enabled = security_layer.enabled
+
         self.any_auth = config.get('any_auth', True)
         self.username = config.get('username', 'admin')
         
@@ -69,6 +76,7 @@ class SSHService:
     
     async def start(self):
         print(f"[SSH] Starting SSH honeypot on port {self.port}")
+        print(f"[SSH] Security enabled: {self.security_enabled}")
         print(f"[SSH] Logs: {self.log_file}")
         
         self.is_running = True
@@ -81,14 +89,19 @@ class SSHService:
                 self.host_key = asyncssh.generate_private_key('ssh-rsa', key_size=2048)
                 key_path.write_bytes(self.host_key.export_private_key())
                 print(f"[SSH] Generated host key")
+
+            clean_banner = self.banner.replace('\r', '').replace('\n', ' ').strip()
+            server_version = clean_banner.replace('SSH-2.0-', '')
             
             print(f"[SSH] Creating server on port {self.port}...")
+            print(f"[SSH] Using banner: {clean_banner}")
+            
             self.server = await asyncssh.create_server(
                 lambda: SSHServer(self),
                 '0.0.0.0',
                 self.port,
                 server_host_keys=[self.host_key],
-                server_version=self.banner.replace('SSH-2.0-', ''),
+                server_version=server_version,
                 reuse_address=True,
                 login_timeout=60
             )
@@ -142,32 +155,54 @@ class SSHServer(asyncssh.SSHServer):
     
     def __init__(self, ssh_service):
         self.ssh_service = ssh_service
+        self.connection_closed = False
         
     def connection_made(self, conn):
         self.conn = conn
         client_ip = conn.get_extra_info('peername')[0]
+        
+        if self.ssh_service.security and self.ssh_service.security_enabled:
+            if not self.ssh_service.security.is_ip_allowed(client_ip):
+                print(f"[SECURITY] Blocked connection from {client_ip} - aborting")
+                self.ssh_service.log_event("blocked_connection", {
+                    "client_ip": client_ip,
+                    "reason": "IP blocked (rate limit, temp ban, or perm ban)"
+                })
+                self.connection_closed = True
+                conn.abort()
+                return
+        
+        if self.ssh_service.security and self.ssh_service.security_enabled:
+            self.ssh_service.security.record_connection(client_ip)
+        
         self.ssh_service.log_event("connection", {"client_ip": client_ip})
-        
-    def connection_lost(self, exc):
-        if hasattr(self, 'conn'):
-            client_ip = self.conn.get_extra_info('peername')[0]
-            self.ssh_service.log_event("disconnection", {"client_ip": client_ip})
-        
-    def begin_auth(self, username):
-        return True
-        
-    def password_auth_supported(self):
-        return True
-        
-    def public_key_auth_supported(self):
-        return True
-        
+    
     def validate_password(self, username, password):
         client_ip = self.conn.get_extra_info('peername')[0]
-        is_valid = username in self.ssh_service.users and self.ssh_service.users[username] == password
+        self.username = username
         
-        # any_auth=True: accept any password (honeypot), any_auth=False: validate credentials
+        security_enabled = self.ssh_service.security_enabled
+        
+        if security_enabled and self.ssh_service.security:
+            if not self.ssh_service.security.is_ip_allowed(client_ip):
+                print(f"[SECURITY] Blocked login attempt from blocked IP: {client_ip}")
+                return False
+            
+        is_valid = username in self.ssh_service.users and self.ssh_service.users[username] == password
         accept = True if self.ssh_service.any_auth else is_valid
+        
+        if security_enabled and self.ssh_service.security:
+            if not accept or not is_valid:
+                self.ssh_service.security.record_failed_attempt(client_ip)
+                print(f"[SECURITY] Failed login attempt from {client_ip}")
+                
+                if not self.ssh_service.security.check_rate_limit(client_ip):
+                    print(f"[SECURITY] Blocking IP {client_ip} for too many failed attempts")
+                    self.ssh_service.security.temp_block_ip(client_ip)
+                    return False
+        else:
+            if not accept or not is_valid:
+                print(f"[INFO] Login attempt (security disabled) from {client_ip}")
         
         self.ssh_service.log_event("login_attempt", {
             "client_ip": client_ip,
@@ -175,25 +210,31 @@ class SSHServer(asyncssh.SSHServer):
             "password": password,
             "success": accept,
             "valid_credentials": is_valid,
-            "any_auth_mode": self.ssh_service.any_auth
+            "any_auth_mode": self.ssh_service.any_auth,
+            "security_enabled": security_enabled
         })
         
         return accept
         
-    def validate_public_key(self, username, key):
-        client_ip = self.conn.get_extra_info('peername')[0]
-        self.ssh_service.log_event("login_attempt", {
-            "client_ip": client_ip,
-            "username": username,
-            "auth_method": "publickey",
-            "success": True
-        })
+    def begin_auth(self, username):
+        if hasattr(self, 'connection_closed') and self.connection_closed:
+            return False
         return True
         
+    def password_auth_supported(self):
+        return True
+        
+    def public_key_auth_supported(self):
+        return True
+    
     def session_requested(self):
         client_ip = self.conn.get_extra_info('peername')[0]
-        username = self.ssh_service.username
-        return SSHServerSession(self.ssh_service, username, client_ip, self.ssh_service.hostname)
+        username = getattr(self, 'username', self.ssh_service.username)
+        hostname = self.ssh_service.hostname
+        
+        print(f"[SSH] Session requested by {username}@{client_ip}")
+        
+        return SSHServerSession(self.ssh_service, username, client_ip, hostname)
 
 
 class SSHServerSession(asyncssh.SSHServerSession):
@@ -212,30 +253,61 @@ class SSHServerSession(asyncssh.SSHServerSession):
         self.editor_file = None
         self.editor_content = []
         self.editor_type = None
+        
+        self.environment = {
+            'USER': username,
+            'HOME': f'/home/{username}',
+            'SHELL': '/bin/bash',
+            'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            'PWD': f'/home/{username}',
+            'TERM': 'xterm-256color',
+            'SSH_CLIENT': f'{client_ip} 12345 22',
+            'SSH_CONNECTION': f'{client_ip} 12345 192.168.1.100 22',
+            'LANG': 'en_US.UTF-8',
+            'LC_ALL': 'en_US.UTF-8'
+        }
+        
+        self.command_history = []
+        self.history_index = 0
+        
+        self.sudo_active = False
+        self.sudo_user = None
+        
+        self.session_start_time = datetime.now()
+        self.command_timeout = ssh_service.config.get('command_timeout', 30)
+        self.max_session_time = ssh_service.config.get('max_session_time', 3600)
+
+        self.vim_command_mode = False
+        self.vim_command_buffer = ''
+        self.save_prompt = False
+        self.nano_cursor_line = 0
+        self.nano_cursor_col = 0
+        self.cut_buffer = []
     
     def _create_filesystem(self):
         return {
             '/': ['bin', 'boot', 'dev', 'etc', 'home', 'lib', 'mnt', 'opt', 'proc', 'root', 'run', 'sbin', 'srv', 'sys', 'tmp', 'usr', 'var'],
             '/home': [self.username, 'ubuntu'],
-            f'/home/{self.username}': ['Documents', 'Downloads', 'Pictures', 'Videos', 'Music', 'Desktop', '.bashrc', '.profile', '.ssh'],
+            f'/home/{self.username}': ['Documents', 'Downloads', 'Pictures', 'Videos', 'Music', 'Desktop', '.bashrc', '.profile', '.ssh', '.bash_history'],
             f'/home/{self.username}/Documents': ['notes.txt', 'report.pdf', 'project'],
-            f'/home/{self.username}/Documents/project': ['README.md', 'config.ini'],
-            f'/home/{self.username}/Downloads': ['setup.sh', 'data.zip', 'installer.deb'],
+            f'/home/{self.username}/Documents/project': ['README.md', 'config.ini', 'setup.sh'],
+            f'/home/{self.username}/Downloads': ['setup.sh', 'data.zip', 'installer.deb', 'backup.tar.gz'],
             f'/home/{self.username}/Pictures': ['photo1.jpg', 'photo2.png'],
             f'/home/{self.username}/Videos': ['video.mp4'],
             f'/home/{self.username}/Music': ['song.mp3'],
             f'/home/{self.username}/Desktop': ['work', 'personal'],
             f'/home/{self.username}/Desktop/work': ['project.doc'],
             f'/home/{self.username}/Desktop/personal': ['todo.txt'],
-            f'/home/{self.username}/.ssh': ['authorized_keys', 'known_hosts'],
-            '/etc': ['passwd', 'shadow', 'hosts', 'hostname', 'network', 'ssh', 'cron.d', 'nginx', 'apache2'],
-            '/var': ['log', 'www', 'lib', 'cache'],
-            '/var/log': ['syslog', 'auth.log', 'nginx', 'apache2'],
+            f'/home/{self.username}/.ssh': ['authorized_keys', 'known_hosts', 'id_rsa', 'id_rsa.pub'],
+            '/etc': ['passwd', 'shadow', 'hosts', 'hostname', 'network', 'ssh', 'cron.d', 'nginx', 'apache2', 'os-release'],
+            '/var': ['log', 'www', 'lib', 'cache', 'backups'],
+            '/var/log': ['syslog', 'auth.log', 'nginx', 'apache2', 'mysql'],
             '/var/www': ['html'],
-            '/var/www/html': ['index.html', 'style.css'],
+            '/var/www/html': ['index.html', 'style.css', 'script.js'],
             '/tmp': ['tmp_file_1', 'session_123'],
             '/usr': ['bin', 'lib', 'share', 'local'],
-            '/usr/bin': ['python3', 'bash', 'ls', 'cat', 'grep', 'vim', 'nano'],
+            '/usr/bin': ['python3', 'bash', 'ls', 'cat', 'grep', 'vim', 'nano', 'wget', 'curl', 'tar', 'zip', 'unzip'],
+            '/root': ['.bashrc', '.profile', '.ssh'],
         }
     
     def _get_dir_contents(self, path):
@@ -246,7 +318,6 @@ class SSHServerSession(asyncssh.SSHServerSession):
         elif not path.startswith('/'):
             path = f'{self.cwd}/{path}'
         
-        # Remove trailing slash
         path = path.rstrip('/')
         if not path:
             path = '/'
@@ -268,7 +339,6 @@ class SSHServerSession(asyncssh.SSHServerSession):
         if contents is not None:
             return True, normalized
         
-        # Verifica se é um arquivo dentro de um diretório
         parent = '/'.join(normalized.split('/')[:-1]) or '/'
         filename = normalized.split('/')[-1]
         parent_contents, _ = self._get_dir_contents(parent)
@@ -283,9 +353,8 @@ class SSHServerSession(asyncssh.SSHServerSession):
         
     def shell_requested(self):
         return True
-        
+    
     def session_started(self):
-        # Banners baseados no OS Template
         os_banners = {
             'Ubuntu': "\r\nWelcome to Ubuntu 18.04.6 LTS (GNU/Linux 4.15.0-20-generic x86_64)\r\n\r\n * Documentation:  https://help.ubuntu.com\r\n * Management:     https://landscape.canonical.com\r\n * Support:        https://ubuntu.com/advantage\r\n\r\n",
             'Debian': "\r\nDebian GNU/Linux 11 (bullseye)\r\n\r\n * Documentation:  https://www.debian.org/doc/\r\n * Support:        https://www.debian.org/support\r\n\r\n",
@@ -301,7 +370,6 @@ class SSHServerSession(asyncssh.SSHServerSession):
         self._send_prompt()
         
     def _send_prompt(self):
-        # Mostra ~ se estiver em home, senão mostra path
         display_path = self.cwd
         home = f'/home/{self.username}'
         if self.cwd == home:
@@ -309,15 +377,22 @@ class SSHServerSession(asyncssh.SSHServerSession):
         elif self.cwd.startswith(home + '/'):
             display_path = '~' + self.cwd[len(home):]
         
-        self._chan.write(f"{self.username}@{self.hostname}:{display_path}$ ")
+        user_display = f"{self.username}@{self.hostname}"
+        if self.sudo_active and self.sudo_user:
+            user_display = f"{self.sudo_user}@{self.hostname}"
         
+        prompt = f"{user_display}:{display_path}# " if self.sudo_active else f"{user_display}:{display_path}$ "
+        self._chan.write(prompt)
+
     def data_received(self, data, datatype):
-        # Se está no editor, processa input do editor
         if self.in_editor:
             self._handle_editor_input(data)
             return
             
-        # Processa comando normal
+        if self.vim_command_mode:
+            self._handle_editor_input(data)
+            return
+
         command = data.strip()
         
         if not command:
@@ -329,54 +404,76 @@ class SSHServerSession(asyncssh.SSHServerSession):
             "username": self.username,
             "command": command
         })
+
+        cmd_lower = command.lower()
+        if cmd_lower in ['exit', 'logout', 'quit']:
+            if self.sudo_active:
+                self.sudo_active = False
+                self.sudo_user = None
+                self._chan.write("\r\n")
+                self._send_prompt()
+            else:
+                self._chan.write("\r\n")
+                self._chan.exit(0)
+            return
         
         response = self.process_command(command)
         
-        # Só envia resposta e prompt se não entrou no modo editor
         if not self.in_editor:
             self._chan.write(response)
             
-            if command.lower() in ['exit', 'logout', 'quit']:
-                self._chan.exit(0)
+            if command == 'sudo su' or (command.startswith('sudo su ') and '-' not in command):
+                self.sudo_active = True
+                self.sudo_user = 'root'
+                self._send_prompt()
             else:
                 self._send_prompt()
         else:
-            # Se entrou no editor, envia apenas a interface (response já contém)
             self._chan.write(response)
             
     def process_command(self, cmd: str) -> str:
-        """Simula comandos Linux com sistema de arquivos virtual"""
         cmd = cmd.strip()
         parts = cmd.split()
         
         if not parts:
             return ""
         
+        if cmd.lower() in ['exit', 'logout', 'quit']:
+            return ""
+        
+        self.command_history.append(cmd)
+        self.history_index = len(self.command_history)
+        
+        if parts[0] == 'sudo':
+            return self._handle_sudo(cmd, parts[1:])
+        
         command = parts[0]
         
-        # Comandos básicos
         if command == 'whoami':
-            return f"{self.username}\r\n"
+            return f"{self.sudo_user if self.sudo_active else self.username}\r\n"
         elif command == 'pwd':
             return f"{self.cwd}\r\n"
         elif command == 'hostname':
             return f"{self.hostname}\r\n"
         elif command == 'id':
+            if self.sudo_active:
+                return f"uid=0(root) gid=0(root) groups=0(root)\r\n"
             return f"uid=1000({self.username}) gid=1000({self.username}) groups=1000({self.username}),27(sudo)\r\n"
         
-        # ls - Lista diretórios
         elif command == 'ls':
             target = self.cwd
             show_long = False
             show_all = False
+            show_human = False
             
-            # Parse argumentos
             for arg in parts[1:]:
                 if arg.startswith('-'):
                     if 'l' in arg:
                         show_long = True
                     if 'a' in arg:
                         show_all = True
+                    if 'h' in arg:
+                        show_human = True
                 elif not arg.startswith('-'):
                     target = arg
             
@@ -386,7 +483,7 @@ class SSHServerSession(asyncssh.SSHServerSession):
                 return f"ls: cannot access '{target}': No such file or directory\r\n"
             
             if show_long:
-                result = "total 32\r\n"
+                result = f"total {random.randint(20, 100)}\r\n"
                 if show_all:
                     result += f"drwxr-xr-x 4 {self.username} {self.username} 4096 Dec 24 10:30 .\r\n"
                     result += f"drwxr-xr-x 3 root  root  4096 Dec 20 15:22 ..\r\n"
@@ -394,20 +491,32 @@ class SSHServerSession(asyncssh.SSHServerSession):
                 for item in contents:
                     if item.startswith('.'):
                         if show_all:
-                            result += f"-rw-r--r-- 1 {self.username} {self.username}  220 Dec 20 15:22 {item}\r\n"
+                            is_dir = self.filesystem.get(f"{path}/{item}".rstrip('/'))
+                            size = random.randint(100, 9999)
+                            if show_human and size > 1024:
+                                size_str = f"{size/1024:.1f}K"
+                            else:
+                                size_str = str(size)
+                            if is_dir:
+                                result += f"drwxr-xr-x 2 {self.username} {self.username} 4096 Dec 24 10:30 {item}\r\n"
+                            else:
+                                result += f"-rw-r--r-- 1 {self.username} {self.username} {size_str} Dec 24 10:30 {item}\r\n"
                     else:
-                        # Verifica se é diretório
                         is_dir = self.filesystem.get(f"{path}/{item}".rstrip('/'))
+                        size = random.randint(100, 9999)
+                        if show_human and size > 1024:
+                            size_str = f"{size/1024:.1f}K"
+                        else:
+                            size_str = str(size)
                         if is_dir:
                             result += f"drwxr-xr-x 2 {self.username} {self.username} 4096 Dec 24 10:30 {item}\r\n"
                         else:
-                            result += f"-rw-r--r-- 1 {self.username} {self.username} {random.randint(100, 9999)} Dec 24 10:30 {item}\r\n"
+                            result += f"-rw-r--r-- 1 {self.username} {self.username} {size_str} Dec 24 10:30 {item}\r\n"
                 return result
             else:
                 items = [i for i in contents if show_all or not i.startswith('.')]
                 return '  '.join(items) + "\r\n" if items else "\r\n"
         
-        # cd - Muda diretório
         elif command == 'cd':
             if len(parts) == 1:
                 self.cwd = f'/home/{self.username}'
@@ -415,12 +524,10 @@ class SSHServerSession(asyncssh.SSHServerSession):
             
             target = parts[1]
             
-            # Casos especiais
             if target == '~':
                 self.cwd = f'/home/{self.username}'
                 return ""
             elif target == '-':
-                # cd - volta ao diretório anterior (não implementado)
                 return ""
             
             exists, new_path = self._path_exists(target)
@@ -428,15 +535,13 @@ class SSHServerSession(asyncssh.SSHServerSession):
             if not exists:
                 return f"bash: cd: {target}: No such file or directory\r\n"
             
-            # Verifica se é diretório (existe no filesystem)
             if new_path in self.filesystem:
                 self.cwd = new_path
+                self.environment['PWD'] = new_path
                 return ""
             else:
-                # É um arquivo, não um diretório
                 return f"bash: cd: {target}: Not a directory\r\n"
         
-        # cat - Lê arquivos
         elif command == 'cat':
             if len(parts) < 2:
                 return ""
@@ -447,14 +552,11 @@ class SSHServerSession(asyncssh.SSHServerSession):
             if not exists:
                 return f"cat: {target}: No such file or directory\r\n"
             
-            # Verifica se é diretório
             if path in self.filesystem:
                 return f"cat: {target}: Is a directory\r\n"
             
-            # Conteúdo de arquivos específicos
             filename = path.split('/')[-1]
             
-            # Arquivos de sistema
             if filename == 'passwd' or path == '/etc/passwd':
                 return f"""root:x:0:0:root:/root:/bin/bash
 daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
@@ -467,302 +569,173 @@ www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 alias ls='ls --color=auto'
 alias ll='ls -la'
+alias la='ls -A'
+alias l='ls -CF'
 \r\n"""
-            elif filename == '.profile':
-                return """# ~/.profile
-if [ -n "$BASH_VERSION" ]; then
-    if [ -f "$HOME/.bashrc" ]; then
-        . "$HOME/.bashrc"
-    fi
-fi
-\r\n"""
-            
-            # Arquivos do usuário com conteúdo específico
             elif filename == 'notes.txt':
                 return """Important notes:
 - Server backup scheduled for tonight at 2 AM
 - Remember to update SSL certificates before Jan 1st
 - Check database logs for any unusual activity
-- Team meeting tomorrow at 10 AM
 \r\n"""
-            elif filename == 'README.md':
-                return """# Project Documentation
+            else:
+                return f"Sample content of {filename}\r\n"
+        
+        elif command == 'grep':
+            if len(parts) < 3:
+                return "Usage: grep [OPTION]... PATTERN [FILE]...\r\n"
+            pattern = parts[1]
+            target = ' '.join(parts[2:])
+            return f"grep: {target}: No such file or directory\r\n"
+        
+        elif command == 'find':
+            if len(parts) == 1:
+                find_path = self.cwd
+            else:
+                find_path = parts[1]
+            
+            exists, path = self._path_exists(find_path)
+            if not exists:
+                return f"find: '{find_path}': No such file or directory\r\n"
+            
+            result = f"{path}\r\n"
+            contents, _ = self._get_dir_contents(path)
+            if contents:
+                for item in contents[:5]:
+                    result += f"{path}/{item}\r\n"
+            return result
+        
+        elif command in ['vim', 'vi']:
+            if len(parts) < 2:
+                return "E325: ATTENTION: no file specified\r\n"
+            self.editor_file = parts[1]
+            self.editor_type = 'vim'
+            self.in_editor = True
+            self.vim_command_mode = False
+            exists, _ = self._path_exists(self.editor_file)
+            if exists:
+                self.editor_content = [f"Sample content of {self.editor_file}"]
+            else:
+                self.editor_content = []
+            return self._render_vim()
+        
+        elif command == 'nano':
+            if len(parts) < 2:
+                return "nano: missing file operand\r\n"
+            self.editor_file = parts[1]
+            self.editor_type = 'nano'
+            self.in_editor = True
+            self.nano_cursor_line = 0
+            self.nano_cursor_col = 0
+            exists, _ = self._path_exists(self.editor_file)
+            if exists:
+                self.editor_content = [f"Sample content of {self.editor_file}"]
+            else:
+                self.editor_content = []
+            return self._render_nano()
+        
+        elif command == 'wget':
+            if len(parts) < 2:
+                return "wget: missing URL\r\n"
+            url = parts[1]
+            filename = url.split('/')[-1] or 'index.html'
+            return f"""--{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}
+Resolving host... ({random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)})
+Connecting to host... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: {random.randint(1000, 99999)} ({random.randint(10, 99)}K) [text/html]
+Saving to: '{filename}'
 
-## Overview
-This is a sample project for demonstration purposes.
+{filename}              100%[===================>]  {random.randint(10, 99)}.{random.randint(10,99)}K  --.-KB/s    in 0.{random.randint(1,9)}s
 
-## Installation
-Run `./setup.sh` to install dependencies.
+{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({random.randint(100, 999)} KB/s) - '{filename}' saved [{random.randint(10000, 99999)}/{random.randint(10000, 99999)}]
 
-## Configuration
-Edit `config.ini` for custom settings.
 \r\n"""
-            elif filename == 'config.ini':
-                return """[database]
-host=localhost
-port=3306
-username=admin
-password=changeme123
-
-[server]
-port=8080
-debug=false
-\r\n"""
-            elif filename == 'setup.sh':
-                return """#!/bin/bash
-echo "Installing dependencies..."
-apt-get update
-apt-get install -y python3 nginx mysql-server
-echo "Installation complete!"
-\r\n"""
-            elif filename == 'todo.txt':
-                return """TODO List:
-[ ] Update documentation
-[ ] Fix bug in login module
-[x] Deploy to production
-[ ] Security audit
-\r\n"""
-            elif filename == 'authorized_keys':
-                return """ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDZy7T... user@hostname
-\r\n"""
-            elif filename == 'known_hosts':
-                return """192.168.1.1 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB...
-github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7...
-\r\n"""
-            elif filename == 'index.html':
-                return """<!DOCTYPE html>
+        
+        elif command == 'curl':
+            if len(parts) < 2:
+                return "curl: try 'curl --help' for more information\r\n"
+            url = parts[1]
+            return f"""<!DOCTYPE html>
 <html>
-<head>
-    <title>Welcome</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <h1>Welcome to the server</h1>
-</body>
+<head><title>Sample Page</title></head>
+<body><h1>Welcome</h1><p>This is a sample response from {url}</p></body>
 </html>
 \r\n"""
-            elif filename == 'style.css':
-                return """body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 20px;
-}
-h1 { color: #333; }
-\r\n"""
-            
-            # Arquivos criados pelo usuário - retorna vazio
-            else:
-                # Verifica se foi criado na sessão (não tem conteúdo pré-definido)
-                parent_path = path.rsplit('/', 1)[0] or '/'
-                if parent_path in self.filesystem:
-                    # Arquivo existe mas não tem conteúdo definido
-                    return ""
-                return f"cat: {target}: No such file or directory\r\n"
         
-        # uname
-        elif command == 'uname':
-            if '-a' in parts:
-                return f"Linux {self.hostname} 4.15.0-20-generic #21-Ubuntu SMP x86_64 GNU/Linux\r\n"
-            else:
-                return "Linux\r\n"
-        
-        # ps
         elif command == 'ps':
             return f"""  PID TTY          TIME CMD
  1234 pts/0    00:00:00 bash
  5678 pts/0    00:00:00 ps
 \r\n"""
         
-        # ifconfig / ip
-        elif command in ['ifconfig', 'ip']:
+        elif command == 'top':
+            return """top - 10:30:45 up 5 days,  3:21,  1 user,  load average: 0.12, 0.18, 0.15
+Tasks:  95 total,   1 running,  94 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  2.3 us,  1.2 sy,  0.0 ni, 96.2 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st
+MiB Mem :   2048.0 total,    456.2 free,    821.5 used,    770.3 buff/cache
+MiB Swap:   1024.0 total,   1024.0 free,      0.0 used.   1142.8 avail Mem
+
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+ 1234 root      20   0  162944   5632   4096 S   1.3   0.3   0:02.45 sshd
+\r\n"""
+        
+        elif command == 'df':
+            show_human = '-h' in parts
+            if show_human:
+                return """Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        20G   12G  7.2G  63% /
+tmpfs           2.0G     0  2.0G   0% /dev/shm
+/dev/sda2       100G   45G   51G  47% /home
+\r\n"""
+            else:
+                return """Filesystem     1K-blocks    Used Available Use% Mounted on
+/dev/sda1       20971520 12582912   7549952  63% /
+tmpfs            2097152        0   2097152   0% /dev/shm
+/dev/sda2      104857600 47185920  52428800  47% /home
+\r\n"""
+        
+        elif command == 'free':
+            show_human = '-h' in parts
+            if show_human:
+                return """              total        used        free      shared  buff/cache   available
+Mem:          2.0Gi       800Mi       450Mi        12Mi       770Mi       1.1Gi
+Swap:         1.0Gi          0B       1.0Gi
+\r\n"""
+            else:
+                return """              total        used        free      shared  buff/cache   available
+Mem:        2097152      819200      460800       12288      788352     1167360
+Swap:       1048576           0     1048576
+\r\n"""
+        
+        elif command == 'uname':
+            if '-a' in parts:
+                kernel = "4.15.0-20-generic" if self.os_template == 'Ubuntu' else "3.10.0-1160.el7.x86_64"
+                return f"Linux {self.hostname} {kernel} #21-Ubuntu SMP x86_64 GNU/Linux\r\n"
+            else:
+                return "Linux\r\n"
+        
+        elif command == 'uptime':
+            days = random.randint(1, 30)
+            hours = random.randint(0, 23)
+            minutes = random.randint(0, 59)
+            return f" 10:30:45 up {days} days, {hours}:{minutes:02d},  1 user,  load average: 0.12, 0.18, 0.15\r\n"
+        
+        elif command == 'date':
+            return datetime.now().strftime("%a %b %d %H:%M:%S %Z %Y") + "\r\n"
+        
+        elif command == 'ifconfig' or command == 'ip':
             return f"""eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
-        inet 192.168.1.{random.randint(10, 250)}  netmask 255.255.255.0  broadcast 192.168.1.255
+        inet 192.168.1.100  netmask 255.255.255.0  broadcast 192.168.1.255
         inet6 fe80::a00:27ff:fe4e:66a1  prefixlen 64  scopeid 0x20<link>
-\r\n"""
-        
-        # clear
-        elif command == 'clear':
-            return "\033[2J\033[H"
-        
-        # echo
-        elif command == 'echo':
-            return ' '.join(parts[1:]) + "\r\n"
-        
-        # wget / curl - Download simulation
-        elif command == 'wget':
-            if len(parts) < 2:
-                return "wget: missing URL\r\n"
-            url = parts[1]
-            filename = url.split('/')[-1] or 'index.html'
-            
-            # Adiciona arquivo ao diretório atual
-            if self.cwd in self.filesystem:
-                if filename not in self.filesystem[self.cwd]:
-                    self.filesystem[self.cwd].append(filename)
-            
-            return f"""--2025-12-24 {datetime.now().strftime('%H:%M:%S')}--  {url}
-Resolving host... 93.184.216.34
-Connecting to host... connected.
-HTTP request sent, awaiting response... 200 OK
-Length: {random.randint(1000, 50000)} ({random.randint(10, 100)}K)
-Saving to: '{filename}'
+        ether 08:00:27:4e:66:a1  txqueuelen 1000  (Ethernet)
+        RX packets 123456  bytes 98765432 (98.7 MB)
+        TX packets 67890  bytes 12345678 (12.3 MB)
 
-{filename}    100%[===================>]  {random.randint(10, 100)}K  --.-KB/s    in 0.001s
-
-2025-12-24 {datetime.now().strftime('%H:%M:%S')} ({random.randint(50, 200)} MB/s) - '{filename}' saved
-\r\n"""
-        
-        elif command == 'curl':
-            if len(parts) < 2:
-                return "curl: no URL specified\r\n"
-            return f"<html><body><h1>Sample HTML content</h1></body></html>\r\n"
-        
-        # mkdir
-        elif command == 'mkdir':
-            if len(parts) < 2:
-                return "mkdir: missing operand\r\n"
-            
-            dirname = parts[1]
-            exists, new_path = self._path_exists(dirname)
-            
-            if exists:
-                return f"mkdir: cannot create directory '{dirname}': File exists\r\n"
-            
-            # Adiciona ao filesystem
-            parent_path = new_path.rsplit('/', 1)[0] or '/'
-            dir_name = new_path.rsplit('/', 1)[1]
-            
-            if parent_path in self.filesystem:
-                self.filesystem[parent_path].append(dir_name)
-                self.filesystem[new_path] = []
-            else:
-                return f"mkdir: cannot create directory '{dirname}': No such file or directory\r\n"
-            
-            return ""
-        
-        # touch
-        elif command == 'touch':
-            if len(parts) < 2:
-                return "touch: missing file operand\r\n"
-            
-            filename = parts[1]
-            exists, file_path = self._path_exists(filename)
-            
-            if exists:
-                # Arquivo já existe, apenas "atualiza timestamp"
-                return ""
-            
-            # Cria arquivo novo
-            parent_path = file_path.rsplit('/', 1)[0] or '/'
-            file_name = file_path.rsplit('/', 1)[1]
-            
-            if parent_path in self.filesystem:
-                self.filesystem[parent_path].append(file_name)
-            else:
-                return f"touch: cannot touch '{filename}': No such file or directory\r\n"
-            
-            return ""
-        
-        # rm - Remove arquivos
-        elif command == 'rm':
-            if len(parts) < 2:
-                return "rm: missing operand\r\n"
-            
-            target = parts[1]
-            exists, file_path = self._path_exists(target)
-            
-            if not exists:
-                return f"rm: cannot remove '{target}': No such file or directory\r\n"
-            
-            # Verifica se é diretório
-            if file_path in self.filesystem and '-r' not in parts:
-                return f"rm: cannot remove '{target}': Is a directory\r\n"
-            
-            # Remove do filesystem
-            parent_path = file_path.rsplit('/', 1)[0] or '/'
-            file_name = file_path.rsplit('/', 1)[1]
-            
-            if parent_path in self.filesystem and file_name in self.filesystem[parent_path]:
-                self.filesystem[parent_path].remove(file_name)
-                # Se for diretório, remove também
-                if file_path in self.filesystem:
-                    del self.filesystem[file_path]
-            
-            return ""
-        
-        # mv - Move/renomeia arquivos
-        elif command == 'mv':
-            if len(parts) < 3:
-                return "mv: missing file operand\r\n"
-            
-            source = parts[1]
-            dest = parts[2]
-            
-            exists_src, src_path = self._path_exists(source)
-            if not exists_src:
-                return f"mv: cannot stat '{source}': No such file or directory\r\n"
-            
-            # Remove source
-            parent_src = src_path.rsplit('/', 1)[0] or '/'
-            name_src = src_path.rsplit('/', 1)[1]
-            
-            # Adiciona dest
-            exists_dest, dest_path = self._path_exists(dest)
-            parent_dest = dest_path.rsplit('/', 1)[0] or '/'
-            name_dest = dest_path.rsplit('/', 1)[1]
-            
-            if parent_src in self.filesystem and name_src in self.filesystem[parent_src]:
-                self.filesystem[parent_src].remove(name_src)
-                
-            if parent_dest in self.filesystem:
-                self.filesystem[parent_dest].append(name_dest)
-            
-            return ""
-        
-        # cp - Copia arquivos
-        elif command == 'cp':
-            if len(parts) < 3:
-                return "cp: missing file operand\r\n"
-            
-            source = parts[1]
-            dest = parts[2]
-            
-            exists_src, src_path = self._path_exists(source)
-            if not exists_src:
-                return f"cp: cannot stat '{source}': No such file or directory\r\n"
-            
-            # Adiciona dest
-            exists_dest, dest_path = self._path_exists(dest)
-            parent_dest = dest_path.rsplit('/', 1)[0] or '/'
-            name_dest = dest_path.rsplit('/', 1)[1]
-            
-            if parent_dest in self.filesystem:
-                if name_dest not in self.filesystem[parent_dest]:
-                    self.filesystem[parent_dest].append(name_dest)
-            
-            return ""
-        
-        # find
-        elif command == 'find':
-            return "find: command not fully implemented\r\n"
-        
-        # grep
-        elif command == 'grep':
-            if len(parts) < 2:
-                return ""
-            return "grep: command not fully implemented\r\n"
-        
-        # Comandos de rede adicionais
-        elif command == 'ping':
-            if len(parts) < 2:
-                return "ping: missing host operand\r\n"
-            host = parts[1]
-            return f"""PING {host} (93.184.216.34) 56(84) bytes of data.
-64 bytes from {host}: icmp_seq=1 ttl=64 time=0.123 ms
-64 bytes from {host}: icmp_seq=2 ttl=64 time=0.098 ms
-^C
---- {host} ping statistics ---
-2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1000  (Local Loopback)
 \r\n"""
         
         elif command == 'netstat':
@@ -770,129 +743,245 @@ Saving to: '{filename}'
 Proto Recv-Q Send-Q Local Address           Foreign Address         State
 tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
 tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN
-tcp        0      0 0.0.0.0:3306            0.0.0.0:*               LISTEN
-tcp        0      0 192.168.1.100:22        192.168.1.76:54321      ESTABLISHED
+tcp        0      0 192.168.1.100:22        """ + self.client_ip + """:12345      ESTABLISHED
 \r\n"""
         
-        elif command == 'ss':
-            return """Netid State      Recv-Q Send-Q Local Address:Port   Peer Address:Port
-tcp   LISTEN     0      128          *:22                *:*
-tcp   LISTEN     0      128          *:80                *:*
-tcp   ESTAB      0      0      192.168.1.100:22    192.168.1.76:54321
+        elif command == 'history':
+            result = ""
+            for i, hist_cmd in enumerate(self.command_history[-20:], 1):
+                result += f"  {i}  {hist_cmd}\r\n"
+            return result
+        
+        elif command == 'env' or command == 'printenv':
+            result = ""
+            for key, value in self.environment.items():
+                result += f"{key}={value}\r\n"
+            return result
+        
+        elif command == 'export':
+            if len(parts) < 2:
+                return self.process_command('env')
+            var_assign = ' '.join(parts[1:])
+            if '=' in var_assign:
+                var_name, var_value = var_assign.split('=', 1)
+                self.environment[var_name] = var_value.strip('"').strip("'")
+            return ""
+        
+        elif command == 'chmod':
+            if len(parts) < 3:
+                return "chmod: missing operand\r\n"
+            return ""
+        
+        elif command == 'chown':
+            if len(parts) < 3:
+                return "chown: missing operand\r\n"
+            return ""
+        
+        elif command == 'mkdir':
+            if len(parts) < 2:
+                return "mkdir: missing operand\r\n"
+            dirname = parts[1]
+            return ""
+        
+        elif command == 'rmdir':
+            if len(parts) < 2:
+                return "rmdir: missing operand\r\n"
+            return ""
+        
+        elif command == 'rm':
+            if len(parts) < 2:
+                return "rm: missing operand\r\n"
+            return ""
+        
+        elif command == 'cp':
+            if len(parts) < 3:
+                return "cp: missing destination file operand\r\n"
+            return ""
+        
+        elif command == 'mv':
+            if len(parts) < 3:
+                return "mv: missing destination file operand\r\n"
+            return ""
+        
+        elif command == 'touch':
+            if len(parts) < 2:
+                return "touch: missing file operand\r\n"
+            return ""
+        
+        elif command == 'tail':
+            if len(parts) < 2:
+                return "tail: missing file operand\r\n"
+            target = parts[1]
+            return f"Sample tail output of {target}\r\nLine 1\r\nLine 2\r\nLine 3\r\n"
+        
+        elif command == 'head':
+            if len(parts) < 2:
+                return "head: missing file operand\r\n"
+            target = parts[1]
+            return f"Sample head output of {target}\r\nLine 1\r\nLine 2\r\nLine 3\r\n"
+        
+        elif command == 'tar':
+            if len(parts) < 2:
+                return "tar: missing operand\r\n"
+            return ""
+        
+        elif command == 'zip' or command == 'unzip':
+            if len(parts) < 2:
+                return f"{command}: missing operand\r\n"
+            return ""
+        
+        elif command == 'systemctl':
+            if len(parts) < 2:
+                return "systemctl: missing operand\r\n"
+            action = parts[1]
+            service = parts[2] if len(parts) > 2 else "unknown"
+            if action == 'status':
+                return f"""● {service}.service - {service.capitalize()} Service
+   Loaded: loaded (/lib/systemd/system/{service}.service; enabled)
+   Active: active (running) since {datetime.now().strftime('%a %Y-%m-%d %H:%M:%S %Z')}
+\r\n"""
+            return ""
+        
+        elif command == 'service':
+            if len(parts) < 2:
+                return "service: missing service name\r\n"
+            return ""
+        
+        elif command == 'clear':
+            return "\033[2J\033[H"
+        
+        elif command == 'echo':
+            output = ' '.join(parts[1:])
+            for var, value in self.environment.items():
+                output = output.replace(f'${var}', value)
+                output = output.replace(f'${{{var}}}', value)
+            if '-n' in parts:
+                parts = [p for p in parts if p != '-n']
+                return output
+            return output + "\r\n"
+        
+        elif command == 'man':
+            if len(parts) < 2:
+                return "What manual page do you want?\r\n"
+            return f"Manual page for {parts[1]} - No manual entry for {parts[1]}\r\n"
+        
+        elif command == 'which':
+            if len(parts) < 2:
+                return ""
+            prog = parts[1]
+            return f"/usr/bin/{prog}\r\n"
+        
+        elif command == 'locate':
+            if len(parts) < 2:
+                return "locate: no pattern to search for specified\r\n"
+            pattern = parts[1]
+            return f"/usr/bin/{pattern}\r\n/home/{self.username}/{pattern}\r\n"
+        
+        elif command == 'du':
+            show_human = '-h' in parts
+            if show_human:
+                return f"4.0K\t./Documents\r\n8.0K\t./Downloads\r\n12K\t.\r\n"
+            else:
+                return f"4\t./Documents\r\n8\t./Downloads\r\n12\t.\r\n"
+        
+        elif command == 'w' or command == 'who':
+            return f""" 10:30:45 up 5 days,  3:21,  1 user,  load average: 0.12, 0.18, 0.15
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+{self.username}     pts/0    {self.client_ip}   10:28    0.00s  0.04s  0.00s w
 \r\n"""
         
-        # Comandos de sistema
-        elif command == 'df':
-            return """Filesystem     1K-blocks    Used Available Use% Mounted on
-/dev/sda1       20511356 8234567  11235678  43% /
-tmpfs            2048000   12345   2035655   1% /tmp
-\r\n"""
-        
-        elif command == 'free':
-            return """              total        used        free      shared  buff/cache   available
-Mem:        4048000     1234567     1567890       12345     1245543     2567890
-Swap:       2097152           0     2097152
-\r\n"""
-        
-        elif command == 'top':
-            return """top - {datetime.now().strftime('%H:%M:%S')} up 5 days, 3:42, 1 user, load average: 0.12, 0.34, 0.56
-Tasks: 123 total,   1 running, 122 sleeping,   0 stopped,   0 zombie
-%Cpu(s):  2.3 us,  1.2 sy,  0.0 ni, 96.1 id,  0.3 wa,  0.0 hi,  0.1 si,  0.0 st
-MiB Mem :   3953.1 total,   1531.2 free,   1205.5 used,   1216.4 buff/cache
-MiB Swap:   2048.0 total,   2048.0 free,      0.0 used.   2510.4 avail Mem
+        elif command == 'last':
+            return f"""{self.username}     pts/0        {self.client_ip}   {datetime.now().strftime('%a %b %d %H:%M')}   still logged in
+{self.username}     pts/0        {self.client_ip}   {datetime.now().strftime('%a %b %d %H:%M')} - {datetime.now().strftime('%H:%M')}  (00:15)
 
-  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-    1 root      20   0  169692  13004  10020 S   0.0   0.3   0:01.23 systemd
+wtmp begins {datetime.now().strftime('%a %b %d %H:%M:%S %Y')}
 \r\n"""
         
-    def eof_received(self):
-        return False
+        elif command == 'reboot' or command == 'shutdown':
+            if not self.sudo_active:
+                return f"{command}: Need to be root\r\n"
+            return f"System going down for reboot NOW!\r\n"
         
-    def break_received(self, msec):
-        pass
-    
-    def _draw_nano_interface(self, filename):
-        """Desenha a interface do nano"""
-        screen = "\033[2J\033[H"  # Limpa tela e move cursor para topo
+        elif command == 'python' or command == 'python3':
+            return "Python 3.8.10 (default, Nov 26 2021, 20:14:08)\r\n[GCC 9.3.0] on linux\r\nType \"help\", \"copyright\", \"credits\" or \"license\" for more information.\r\n>>>\r\n"
         
-        # Cabeçalho do GNU nano
-        screen += f"  GNU nano 2.9.3                {filename}                           \r\n"
-        screen += "\r\n"
-        
-        # Área de conteúdo com texto se houver
-        if self.editor_content:
-            for line in self.editor_content[:20]:
-                screen += line + "\r\n"
-            # Preenche linhas vazias restantes
-            for _ in range(20 - len(self.editor_content)):
-                screen += "\r\n"
         else:
-            # Linhas vazias
-            for _ in range(20):
-                screen += "\r\n"
+            return f"bash: {command}: command not found\r\n"
+    
+    def _handle_sudo(self, cmd: str, args: list) -> str:
+        if not args:
+            return "usage: sudo -h | -K | -k | -V\r\n"
         
-        # Rodapé com comandos
-        screen += "^G Get Help  ^O Write Out ^W Where Is  ^K Cut Text  ^J Justify   ^C Cur Pos\r\n"
-        screen += "^X Exit      ^R Read File ^\\ Replace   ^U Uncut Text^T To Spell  ^_ Go To Line"
+        actual_cmd = ' '.join(args)
         
-        # NÃO adiciona nova linha no final - aguarda input do usuário
-        return screen
+        if actual_cmd == 'su':
+            self.sudo_active = True
+            self.sudo_user = 'root'
+            return f"[sudo] password for {self.username}: \r\n"
+        else:
+            return self.process_command(actual_cmd)
+    
+    def _render_vim(self):
+        output = "\033[2J\033[H"
+        term_height = 24
+        term_width = 80
+        
+        for i in range(term_height - 2):
+            if i < len(self.editor_content):
+                line = self.editor_content[i]
+                output += f"{line[:term_width]}\r\n"
+            else:
+                output += "~\r\n"
+        
+        file_info = f'"{self.editor_file}" [New File]'
+        output += f"\033[7m{file_info.ljust(term_width)}\033[0m\r\n"
+        output += "\033[1;1H"
+        
+        return output
+    
+    def _render_nano(self):
+        output = "\033[2J\033[H"
+        output += f"  GNU nano 4.8               {self.editor_file}\r\n\r\n"
+        
+        for line in self.editor_content:
+            output += f"{line}\r\n"
+        
+        output += "\r\n" * (20 - len(self.editor_content))
+        output += "^G Get Help  ^O Write Out ^W Where Is  ^K Cut Text  ^J Justify\r\n"
+        output += "^X Exit      ^R Read File ^\ Replace   ^U Paste Text^T To Spell\r\n"
+        
+        return output
     
     def _handle_editor_input(self, data):
-        """Processa input quando está no editor nano"""
-        # Ctrl+X - Sair
-        if data == b'\x18':  # Ctrl+X
-            self.in_editor = False
-            
-            # Salva arquivo se houver conteúdo
-            parent_path = self.editor_file.rsplit('/', 1)[0] or '/'
-            file_name = self.editor_file.rsplit('/', 1)[1]
-            
-            if parent_path in self.filesystem and file_name not in self.filesystem[parent_path]:
-                self.filesystem[parent_path].append(file_name)
-            
-            # Limpa tela e volta ao prompt
-            self._chan.write("\033[2J\033[H")  # Limpa tela
-            self._send_prompt()
-            return
+        if self.editor_type == 'vim':
+            if data == '\x1b':
+                self.vim_command_mode = True
+                self.vim_command_buffer = ''
+            elif self.vim_command_mode:
+                if data == ':':
+                    self.vim_command_buffer = ':'
+                    self._chan.write("\r\n:")
+                elif data == '\r' and self.vim_command_buffer:
+                    if self.vim_command_buffer in [':q', ':q!', ':wq', ':x']:
+                        self.in_editor = False
+                        self.vim_command_mode = False
+                        self._chan.write("\r\n")
+                        self._send_prompt()
+                    elif self.vim_command_buffer == ':w':
+                        self._chan.write(f'\r\n"{self.editor_file}" [New] 0L, 0C written\r\n')
+                        self._chan.write(self._render_vim())
+                    self.vim_command_buffer = ''
+                else:
+                    self.vim_command_buffer += data
         
-        # Ctrl+C - Mostra posição do cursor
-        elif data == b'\x03':
-            # Mostra mensagem na área de status (ignora por agora)
-            return
-        
-        # Enter - Nova linha
-        elif data == b'\r' or data == b'\n':
-            self.editor_content.append('')
-            # Redesenha interface
-            self._chan.write(self._draw_nano_interface(self.editor_file.split('/')[-1]))
-            return
-        
-        # Backspace - Remove último caractere
-        elif data == b'\x7f' or data == b'\x08':
-            if self.editor_content and len(self.editor_content[-1]) > 0:
-                self.editor_content[-1] = self.editor_content[-1][:-1]
-            # Redesenha interface
-            self._chan.write(self._draw_nano_interface(self.editor_file.split('/')[-1]))
-            return
-        
-        # Outras teclas - adiciona ao conteúdo
-        else:
-            try:
-                text = data.decode('utf-8', errors='ignore')
-                if text.isprintable() or text == ' ':
-                    # Se não há linhas, cria primeira
-                    if not self.editor_content:
-                        self.editor_content.append('')
-                    # Adiciona caractere à última linha
-                    self.editor_content[-1] += text
-                    # Atualiza display
-                    self._chan.write(text)
-            except:
-                pass
-            
+        elif self.editor_type == 'nano':
+            if data == '\x18':
+                self.in_editor = False
+                self._chan.write("\r\n")
+                self._send_prompt()
+    
     def eof_received(self):
         return False
         
     def break_received(self, msec):
-        pass
+        return False
