@@ -4,6 +4,7 @@ from typing import Dict, Any
 from core.port_manager import PortManager
 from core.security_layer import SecurityLayer
 from log_system.session_logger import SessionLogger
+import sys
 
 class MIMICController:
     def __init__(self, config_path: str = "config/honeypot.yaml"):
@@ -12,11 +13,15 @@ class MIMICController:
         self.port_manager = PortManager()
         self.logger = SessionLogger()
         self.services = {}
+        self.file_capture = None
         self.running = False
         
     def load_config(self, path: str) -> Dict[str, Any]:
         with open(path, 'r') as f:
             return yaml.safe_load(f)
+    
+    def start_file_capture(self):
+        pass
     
     async def start_service(self, port: int, service_config: Dict):
         service_type = service_config.get('type', 'generic')
@@ -29,16 +34,25 @@ class MIMICController:
             'password': self.config.get('system', {}).get('password', 'admin123'),
             'os_template': self.config.get('system', {}).get('os_template', 'Ubuntu'),
             'any_auth': self.config.get('options', {}).get('any_auth', True),
-            'human_patterns': self.config.get('options', {}).get('human_patterns', True)
+            'human_patterns': self.config.get('options', {}).get('human_patterns', True),
+            'security_enabled': self.config.get('security', {}).get('enabled', True)
         })
-        
+
         try:
             if service_type == 'ssh':
                 from core.service_emulator.ssh_emulator import SSHService
-                service = SSHService(port, enriched_config)
+                # Adiciona configuração para redirecionar SCP/SFTP
+                if 'enable_scp' in enriched_config:
+                    enriched_config['scp_redirect_port'] = 2222
+                    enriched_config['sftp_redirect_port'] = 2223
+                
+                service = SSHService(port, enriched_config, self.security)
             elif service_type == 'http':
                 from core.service_emulator.http_emulator import HTTPService
                 service = HTTPService(port, service_config)
+            elif service_type == 'http_upload':
+                from core.service_emulator.http_upload import HTTPUploadService
+                service = HTTPUploadService(port, service_config)
             elif service_type == 'ftp':
                 from core.service_emulator.ftp_emulator import FTPService
                 service = FTPService(port, service_config)
@@ -66,6 +80,10 @@ class MIMICController:
             print(f"[!] Error starting service {service_type}: {e}")
     
     async def start_all_services(self):
+        # Inicia captura de arquivos
+        self.start_file_capture()
+        await asyncio.sleep(0.5)  # Dá tempo para os servidores de captura iniciarem
+        
         if 'services' not in self.config:
             print("[!] No services configured")
             return
@@ -84,7 +102,7 @@ class MIMICController:
                 await asyncio.sleep(0.1)
 
         self.running = True
-        print("\n[OK] MIMIC Honeypot READY")
+        print("\n[OK] MIMIC Honeypot READY\n")
     
     async def stop(self):
         print("\n[*] Stopping services...")
