@@ -1,6 +1,3 @@
-"""
-Emulador de servidor HTTP
-"""
 import asyncio
 import random
 from typing import Dict, Any
@@ -8,7 +5,6 @@ from urllib.parse import urlparse, parse_qs
 from .base_service import BaseService
 
 class HTTPService(BaseService):
-    """Emula um servidor HTTP"""
     
     def __init__(self, port: int, config: Dict[str, Any]):
         super().__init__(port, config)
@@ -19,7 +15,6 @@ class HTTPService(BaseService):
         self.fake_responses = self.create_fake_responses()
         
     def create_fake_responses(self) -> Dict:
-        """Cria respostas HTTP falsas"""
         return {
             "/": {
                 "status": 200,
@@ -143,23 +138,19 @@ Allow: /"""
         }
     
     async def handle_connection(self, reader, writer):
-        """Manipula conexão HTTP"""
         client_ip = writer.get_extra_info('peername')[0]
         self.log_connection(client_ip)
         
         try:
-            # Lê requisição
             data = await reader.read(4096)
             if not data:
                 return
             
             request = data.decode('utf-8', errors='ignore')
             self.log_command(client_ip, request.split('\n')[0] if '\n' in request else request)
-            
-            # Processa requisição
+
             response = await self.process_http_request(request, client_ip)
             
-            # Envia resposta
             writer.write(response.encode())
             await writer.drain()
             
@@ -170,34 +161,27 @@ Allow: /"""
             await writer.wait_closed()
     
     async def process_http_request(self, request: str, client_ip: str) -> str:
-        """Processa requisição HTTP"""
         lines = request.strip().split('\n')
         if not lines:
             return self.generate_error_response(400)
-        
-        # Parse primeira linha
+
         first_line = lines[0].split()
         if len(first_line) < 2:
             return self.generate_error_response(400)
         
         method = first_line[0]
         path = first_line[1]
-        
-        # Parse query string
+
         parsed = urlparse(path)
         path = parsed.path
         query_params = parse_qs(parsed.query)
         
-        # Detecta tentativas de ataque
         if self.detect_attack(path, query_params, request, client_ip):
             self.logger.warning(f"Potential attack detected from {client_ip}: {path}")
-            # Resposta especial para atacantes
             return self.generate_honeypot_response()
-        
-        # Delay humano
+
         await self.simulate_human_delay()
         
-        # Gera resposta
         if path in self.fake_responses:
             response_config = self.fake_responses[path]
             return self.build_http_response(
@@ -206,7 +190,6 @@ Allow: /"""
                 response_config["body"]
             )
         else:
-            # Resposta aleatória baseada em probabilidades
             status_code = self.choose_status_code()
             return self.build_http_response(
                 status_code,
@@ -215,7 +198,6 @@ Allow: /"""
             )
     
     def detect_attack(self, path: str, query_params: dict, request: str, client_ip: str) -> bool:
-        """Detecta tentativas de ataque comuns"""
         attack_patterns = [
             "etc/passwd",
             "../",
@@ -240,7 +222,6 @@ Allow: /"""
             if pattern in path_lower or pattern in request_lower:
                 return True
         
-        # Verifica SQL injection em parâmetros
         for param_value in query_params.values():
             for value in param_value:
                 value_lower = str(value).lower()
@@ -251,7 +232,6 @@ Allow: /"""
         return False
     
     def generate_honeypot_response(self) -> str:
-        """Gera resposta especial para atacantes"""
         fake_db_response = {
             "status": 200,
             "headers": {"Content-Type": "application/json"},
@@ -275,7 +255,6 @@ Allow: /"""
         return self.build_http_response(**fake_db_response)
     
     def choose_status_code(self) -> int:
-        """Escolhe código de status baseado em probabilidades"""
         codes = []
         weights = []
         
@@ -286,7 +265,6 @@ Allow: /"""
         return random.choices(codes, weights=weights, k=1)[0]
     
     def generate_fake_page(self, status_code: int, path: str) -> str:
-        """Gera página HTML fake"""
         if status_code == 404:
             return f"""
             <!DOCTYPE html>
@@ -325,7 +303,6 @@ Allow: /"""
             """
     
     def build_http_response(self, status_code: int, headers: dict, body: str) -> str:
-        """Constrói resposta HTTP"""
         status_messages = {
             200: "OK",
             301: "Moved Permanently",
@@ -338,15 +315,14 @@ Allow: /"""
         }
         
         response = [f"HTTP/1.1 {status_code} {status_messages.get(status_code, 'Unknown')}"]
-        
-        # Adiciona headers
+
         headers["Server"] = self.banner
         headers["Content-Length"] = str(len(body))
         
         for key, value in headers.items():
             response.append(f"{key}: {value}")
         
-        response.append("")  # Linha vazia entre headers e body
+        response.append("")
         response.append(body)
         
         return "\r\n".join(response)
