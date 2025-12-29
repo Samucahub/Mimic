@@ -66,7 +66,6 @@ class ConfigManager:
         self.logger.info("Created default configuration")
     
     def load_config(self, force_reload: bool = False) -> Dict[str, Any]:
-        """Carrega configuração do arquivo"""
         if self.config_cache is not None and not force_reload:
             return self.config_cache
         
@@ -76,7 +75,6 @@ class ConfigManager:
             
             self.validate_config()
             
-            # Garantir que as seções obrigatórias existam
             required_sections = ['system', 'options', 'security', 'services']
             for section in required_sections:
                 if section not in self.config_cache:
@@ -111,17 +109,13 @@ class ConfigManager:
             
         except Exception as e:
             self.logger.error(f"Failed to load config: {e}")
-            # Criar configuração padrão se houver erro
             self.create_default_config()
             return self.load_config(force_reload=True)
     
     def save_config(self, config: Dict[str, Any]):
-        """Salva configuração no arquivo"""
         try:
-            # Valida antes de salvar
             self.validate_config_structure(config)
             
-            # Garantir que a estrutura de segurança está completa
             if 'security' in config:
                 if 'rate_limits' not in config['security']:
                     config['security']['rate_limits'] = {}
@@ -145,7 +139,6 @@ class ConfigManager:
             raise
     
     def update_config(self, section: str, key: str, value: Any):
-        """Atualiza uma configuração específica"""
         config = self.load_config()
         
         if section not in config:
@@ -155,17 +148,14 @@ class ConfigManager:
         self.save_config(config)
     
     def get_service_config(self, port: int) -> Optional[Dict[str, Any]]:
-        """Obtém configuração de um serviço específico"""
         config = self.load_config()
         services = config.get('services', {})
         return services.get(str(port)) or services.get(port)
     
     def get_all_services(self) -> Dict[int, Dict[str, Any]]:
-        """Obtém configuração de todos os serviços"""
         config = self.load_config()
         services = config.get('services', {})
-        
-        # Converte chaves string para int se necessário
+
         result = {}
         for port, service_config in services.items():
             try:
@@ -177,7 +167,6 @@ class ConfigManager:
         return result
     
     def add_service(self, port: int, service_config: Dict[str, Any]):
-        """Adiciona um novo serviço"""
         config = self.load_config()
         
         if 'services' not in config:
@@ -187,7 +176,6 @@ class ConfigManager:
         self.save_config(config)
     
     def remove_service(self, port: int):
-        """Remove um serviço"""
         config = self.load_config()
         
         if 'services' in config and port in config['services']:
@@ -195,21 +183,18 @@ class ConfigManager:
             self.save_config(config)
     
     def validate_config(self):
-        """Valida configuração carregada"""
         if self.config_cache is None:
             return
         
         self.validate_config_structure(self.config_cache)
         
-        # Valida serviços
         services = self.config_cache.get('services', {})
         for port, config in services.items():
             try:
                 port_int = int(port)
                 if port_int < 1 or port_int > 65535:
                     raise ValueError(f"Invalid port: {port}")
-                
-                # Valida tipo de serviço
+
                 service_type = config.get('type', '')
                 if service_type not in ['ssh', 'http', 'ftp', 'mysql', 'telnet', 'rdp']:
                     self.logger.warning(f"Unknown service type: {service_type}")
@@ -218,7 +203,6 @@ class ConfigManager:
                 self.logger.error(f"Invalid service configuration: {e}")
     
     def validate_config_structure(self, config: Dict[str, Any]):
-        """Valida estrutura básica da configuração"""
         required_sections = ['system', 'options', 'security', 'services']
         
         for section in required_sections:
@@ -226,7 +210,6 @@ class ConfigManager:
                 raise ValueError(f"Missing required section: {section}")
     
     def export_config(self, format: str = 'yaml') -> str:
-        """Exporta configuração em formato específico"""
         config = self.load_config()
         
         if format.lower() == 'json':
@@ -237,7 +220,6 @@ class ConfigManager:
             raise ValueError(f"Unsupported format: {format}")
     
     def import_config(self, config_data: str, format: str = 'yaml'):
-        """Importa configuração de string"""
         try:
             if format.lower() == 'json':
                 config = json.loads(config_data)
@@ -254,7 +236,6 @@ class ConfigManager:
             raise
     
     def backup_config(self, backup_name: str = None):
-        """Cria backup da configuração atual"""
         import shutil
         from datetime import datetime
         
@@ -269,7 +250,6 @@ class ConfigManager:
         self.logger.info(f"Configuration backed up to {backup_path}")
     
     def list_backups(self) -> list:
-        """Lista backups disponíveis"""
         backups_dir = self.config_dir / "backups"
         
         if not backups_dir.exists():

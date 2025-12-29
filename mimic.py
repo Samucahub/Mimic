@@ -196,16 +196,20 @@ class MimicConfigurator:
 
         self.next_btn = Button(WIDTH - 230, HEIGHT - 80, 160, 50, "NEXT", self.go_to_screen2)
 
-        # Configurações SSH (apenas se SSH estiver habilitado)
         self.ssh_banner = InputBox(100, 240, 470, 35, "SSH Banner", "SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3")
         self.command_timeout = InputBox(100, 370, 150, 30, "Cmd timeout (s)", "30")
         self.session_time = InputBox(270, 370, 150, 30, "Max session (s)", "3600")
         
-        # REMOVIDO: Simulation Features (agora são automáticas)
-        
+
         self.back_btn = Button(WIDTH - 580, HEIGHT - 80, 140, 50, "BACK", self.go_to_screen1)
         self.save_btn = Button(WIDTH - 430, HEIGHT - 80, 140, 50, "SAVE", self.save_config)
         self.start_btn = Button(WIDTH - 280, HEIGHT - 80, 230, 50, "Let The Show Begin!", self.start_honeypot)
+
+        self.ftp_banner = InputBox(100, 500, 500, 35, "FTP Banner", "220 ProFTPD 1.3.5 Server (Debian)")
+        self.allow_anonymous = Checkbox(100, 560, "Allow anonymous login", True)
+        self.allow_upload = Checkbox(100, 600, "Allow file upload", True)
+        self.allow_download = Checkbox(100, 640, "Allow file download", True)
+        self.max_upload_size = InputBox(350, 630, 150, 30, "Max upload size (MB)", "100")
 
         self.honeypot_process = None
         self.honeypot_running = False
@@ -320,12 +324,13 @@ class MimicConfigurator:
     def draw_screen2(self):
         enabled_services = [s.name for s in self.services if s.enabled]
         ssh_enabled = "SSH" in enabled_services
+        ftp_enabled = "FTP" in enabled_services
         
         if ssh_enabled:
-            title = self.font_big.render("SSH CONFIGURATION", True, COLORS['white'])
+            title = self.font_big.render("SERVICES  CONFIGURATION", True, COLORS['white'])
             self.screen.blit(title, (50, 40))
             
-            subtitle = self.small.render("Configuring SSH service (Port: 22)", True, COLORS['gray_light'])
+            subtitle = self.small.render("Configuring services", True, COLORS['gray_light'])
             self.screen.blit(subtitle, (50, 110))
         
         pygame.draw.line(self.screen, COLORS['gray_dark'], (50, 140), (WIDTH - 50, 140), 2)
@@ -341,6 +346,16 @@ class MimicConfigurator:
             
             self.command_timeout.draw(self.screen, self.small)
             self.session_time.draw(self.screen, self.small)
+
+        if ftp_enabled:
+            ftp_label = self.font.render("FTP SETTINGS", True, COLORS['white'])
+            self.screen.blit(ftp_label, (100, 430))
+            
+            self.ftp_banner.draw(self.screen, self.small)
+            self.allow_anonymous.draw(self.screen, self.small)
+            self.allow_upload.draw(self.screen, self.small)
+            self.allow_download.draw(self.screen, self.small)
+            self.max_upload_size.draw(self.screen, self.small)
         
         services_label = self.font.render("SELECTED SERVICES", True, COLORS['white'])
         services_x = 850 if ssh_enabled else 100
@@ -471,12 +486,20 @@ class MimicConfigurator:
                     self.next_btn.handle_event(e)
                 
                 elif self.current_screen == 2:
-                    # Apenas processar eventos SSH se SSH estiver habilitado
                     ssh_enabled = any(s.name == "SSH" and s.enabled for s in self.services)
                     if ssh_enabled:
                         self.ssh_banner.handle_event(e)
                         self.command_timeout.handle_event(e)
                         self.session_time.handle_event(e)
+                    
+                    ftp_enabled = any(s.name == "FTP" and s.enabled for s in self.services)
+                    if ftp_enabled:
+                        self.ftp_banner.handle_event(e)
+                        self.allow_anonymous.handle_event(e)
+                        self.allow_upload.handle_event(e)
+                        self.allow_download.handle_event(e)
+                        self.max_upload_size.handle_event(e)
+                    
                     self.back_btn.handle_event(e)
                     self.save_btn.handle_event(e)
                     self.start_btn.handle_event(e)
@@ -531,10 +554,18 @@ class MimicConfigurator:
         for s in self.services:
             if s.enabled:
                 port = int(s.port)
+                
+                if s.name == "SSH":
+                    banner = self._clean_banner(self.ssh_banner.text)
+                elif s.name == "FTP":
+                    banner = self.ftp_banner.text
+                else:
+                    banner = self._get_service_banner(s.name)
+                
                 service_config = {
                     "type": s.name.lower(),
                     "enabled": True,
-                    "banner": self._clean_banner(self.ssh_banner.text if s.name == "SSH" else self._get_service_banner(s.name))
+                    "banner": banner
                 }
                 
                 if s.name == "SSH":
@@ -542,6 +573,18 @@ class MimicConfigurator:
                         "command_timeout": int(self.command_timeout.text) if self.command_timeout.text.isdigit() else 30,
                         "max_session_time": int(self.session_time.text) if self.session_time.text.isdigit() else 3600
                     })
+                elif s.name == "FTP":
+                    ftp_options = {}
+                    if self.allow_anonymous.checked:
+                        ftp_options["anonymous_login"] = True
+                    if self.allow_upload.checked:
+                        ftp_options["allow_upload"] = True
+                    if self.allow_download.checked:
+                        ftp_options["allow_download"] = True
+                    if self.max_upload_size.text.isdigit():
+                        ftp_options["max_file_size"] = int(self.max_upload_size.text) * 1024 * 1024
+                    
+                    service_config.update(ftp_options)
                 
                 config["services"][str(port)] = service_config
         
@@ -576,13 +619,13 @@ class MimicConfigurator:
     def _get_service_banner(self, service_name):
         banners = {
             "SSH": "SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3",
-            "FTP": "220 ProFTPD 1.3.5 Server",
+            "FTP": "220 ProFTPD 1.3.5 Server (Debian)",
             "HTTP": "Apache/2.4.29 (Ubuntu)",
             "TELNET": "Ubuntu 18.04.6 LTS",
-            "MYSQL": "5.7.35 - MySQL Community Server",
+            "MYSQL": "5.7.35-0ubuntu0.18.04.2",
             "RDP": "Microsoft Terminal Services"
         }
-        return banners.get(service_name, "Unknown")
+        return banners.get(service_name, "Unknown Service")
 
     def start_honeypot(self):
         if not self.save_config():

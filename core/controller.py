@@ -41,7 +41,6 @@ class MIMICController:
         try:
             if service_type == 'ssh':
                 from core.service_emulator.ssh_emulator import SSHService
-                # Adiciona configuração para redirecionar SCP/SFTP
                 if 'enable_scp' in enriched_config:
                     enriched_config['scp_redirect_port'] = 2222
                     enriched_config['sftp_redirect_port'] = 2223
@@ -55,7 +54,13 @@ class MIMICController:
                 service = HTTPUploadService(port, service_config)
             elif service_type == 'ftp':
                 from core.service_emulator.ftp_emulator import FTPService
-                service = FTPService(port, service_config)
+                enriched_config.update({
+                    'hostname': self.config.get('system', {}).get('hostname', 'ubuntu-server'),
+                    'os_template': self.config.get('system', {}).get('os_template', 'Ubuntu'),
+                    'any_auth': self.config.get('options', {}).get('any_auth', True),
+                    'human_patterns': self.config.get('options', {}).get('human_patterns', True)
+                })
+                service = FTPService(port, enriched_config)
             elif service_type == 'mysql':
                 from core.service_emulator.mysql_emulator import MySQLService
                 service = MySQLService(port, service_config)
@@ -80,9 +85,8 @@ class MIMICController:
             print(f"[!] Error starting service {service_type}: {e}")
     
     async def start_all_services(self):
-        # Inicia captura de arquivos
         self.start_file_capture()
-        await asyncio.sleep(0.5)  # Dá tempo para os servidores de captura iniciarem
+        await asyncio.sleep(0.5)
         
         if 'services' not in self.config:
             print("[!] No services configured")

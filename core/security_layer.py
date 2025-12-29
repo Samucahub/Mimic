@@ -17,12 +17,11 @@ class SecurityLayer:
     def __init__(self, config: Dict):
         self.config = config
         self.logger = logging.getLogger('security')
-        self.logger.setLevel(logging.DEBUG)  # Aumentar nível de log para DEBUG
+        self.logger.setLevel(logging.DEBUG)
         
         self.enabled = config.get('enabled', True)
         self.logger.debug(f"Security layer enabled: {self.enabled}")
 
-        # Adicionar handler para console
         if not self.logger.handlers:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.DEBUG)
@@ -42,7 +41,6 @@ class SecurityLayer:
         self.logger.debug(f"Security layer initialized with config: {self.rate_limit_config}")
         self.logger.debug(f"Max failed logins: {self.rate_limit_config.get('max_failed_logins', 10)}")
         
-        # Se segurança desabilitada, limpa todos os bloqueios
         if not self.enabled:
             self.logger.info("Security disabled - clearing all blocks")
             self.blocked_ips.clear()
@@ -67,7 +65,6 @@ class SecurityLayer:
         return 1 <= port <= 65535
     
     def is_ip_allowed(self, ip: str) -> bool:
-        """Verifica se IP está autorizado"""
         self.logger.debug(f"Checking if IP {ip} is allowed")
         
         if not self.enabled:
@@ -96,18 +93,15 @@ class SecurityLayer:
         return True
     
     def check_rate_limit(self, ip: str) -> bool:
-        """Verifica rate limiting por IP"""
         if not self.enabled:
             self.logger.debug(f"Security disabled, rate limit check passed for IP {ip}")
             return True
         
         now = datetime.now()
-        
-        # Limpa tentativas antigas
+
         window_seconds = self.rate_limit_config.get('window_seconds', 60)
         window_start = now - timedelta(seconds=window_seconds)
         
-        # Filtra tentativas recentes
         recent_failures = [
             attempt for attempt in self.failed_attempts[ip]
             if attempt > window_start
@@ -117,12 +111,10 @@ class SecurityLayer:
         max_failures = self.rate_limit_config.get('max_failed_logins', 10)
         self.logger.debug(f"IP {ip}: {len(recent_failures)} failed attempts in last {window_seconds}s (max: {max_failures})")
         
-        # Verifica limite de falhas
         if len(recent_failures) >= max_failures:
             self.logger.warning(f"IP {ip} exceeded max failed logins ({len(recent_failures)} >= {max_failures})")
             return False
         
-        # Verifica limite de conexões
         max_connections = self.rate_limit_config.get('max_connections_per_minute', 60)
         recent_connections = [
             conn for conn in self.connection_counts[ip]
@@ -137,12 +129,10 @@ class SecurityLayer:
         return True
     
     def record_connection(self, ip: str):
-        """Regista uma nova conexão"""
         self.connection_counts[ip].append(datetime.now())
         self.logger.debug(f"Recorded connection from IP {ip}")
     
     def record_failed_attempt(self, ip: str):
-        """Regista tentativa falhada"""
         if not self.enabled:
             self.logger.debug(f"Security disabled, not recording failed attempt from {ip}")
             return
@@ -153,7 +143,6 @@ class SecurityLayer:
         
         self.logger.warning(f"Recorded failed attempt from IP {ip} (total recent: {recent_count})")
         
-        # Auto-block se muitas tentativas (APENAS se security enabled)
         auto_block_threshold = self.block_config.get('auto_block_failed_logins', 
                                                     self.rate_limit_config.get('max_failed_logins', 10))
         
@@ -163,7 +152,6 @@ class SecurityLayer:
             self.temp_block_ip(ip, minutes=block_duration)
     
     def temp_block_ip(self, ip: str, minutes: int = 60):
-        """Bloqueia IP temporariamente"""
         if not self.enabled:
             self.logger.debug(f"Security disabled, not blocking IP {ip}")
             return
@@ -174,12 +162,10 @@ class SecurityLayer:
         self.logger.warning(f"Temporarily blocked IP {ip} until {block_until.strftime('%H:%M:%S')} ({block_duration} minutes)")
     
     def perm_block_ip(self, ip: str):
-        """Bloqueia IP permanentemente"""
         self.blocked_ips.add(ip)
         self.logger.critical(f"Permanently blocked IP {ip}")
     
     def unblock_ip(self, ip: str):
-        """Remove bloqueio de IP"""
         if ip in self.blocked_ips:
             self.blocked_ips.remove(ip)
         
@@ -189,7 +175,6 @@ class SecurityLayer:
         self.logger.info(f"Unblocked IP {ip}")
     
     def detect_attack_pattern(self, ip: str, data: Dict) -> Optional[str]:
-        """Deteça padrões de ataque"""
         attack_types = [
             self.detect_brute_force,
             self.detect_port_scan,
@@ -206,41 +191,35 @@ class SecurityLayer:
         return None
     
     def detect_brute_force(self, ip: str, data: Dict) -> Optional[str]:
-        """Deteça tentativas de brute force"""
         if 'password_attempts' in data:
             attempts = data['password_attempts']
-            if attempts >= 5:  # Limite para deteção
+            if attempts >= 5:  # Detection threshold
                 return 'brute_force'
         
-        # Verifica falhas rápidas
         recent_failures = self.failed_attempts.get(ip, [])
         if len(recent_failures) >= 3:
-            # Verifica se foram em rápido sucessão
             if len(recent_failures) >= 3:
                 time_diff = (recent_failures[-1] - recent_failures[0]).total_seconds()
-                if time_diff < 10:  # 3 falhas em menos de 10 segundos
+                if time_diff < 10:  # 3 failures in less than 10 seconds
                     return 'brute_force'
         
         return None
     
     def detect_port_scan(self, ip: str, data: Dict) -> Optional[str]:
-        """Deteça port scanning"""
         if 'ports_accessed' in data:
             ports = data['ports_accessed']
-            if len(ports) >= 5:  # Múltiplas portas
+            if len(ports) >= 5:  # Multiple ports
                 return 'port_scan'
         
         return None
     
     def detect_sql_injection(self, ip: str, data: Dict) -> Optional[str]:
-        """Deteça SQL injection"""
         sql_keywords = ['SELECT', 'UNION', 'INSERT', 'DELETE', 'DROP', 
                        'UPDATE', 'OR', 'AND', '--', '/*', '*/']
         
         if 'query' in data:
             query = data['query'].upper()
             if any(keyword in query for keyword in sql_keywords):
-                # Verifica se é injection (não apenas query normal)
                 suspicious_patterns = [
                     "' OR '1'='1",
                     "' OR 1=1--",
@@ -253,7 +232,6 @@ class SecurityLayer:
         return None
     
     def detect_command_injection(self, ip: str, data: Dict) -> Optional[str]:
-        """Deteça command injection"""
         dangerous_commands = [
             ';', '|', '&', '`', '$', '(', ')', '<', '>',
             'cat /etc/passwd',
@@ -271,27 +249,22 @@ class SecurityLayer:
         return None
     
     def detect_dos_attempt(self, ip: str, data: Dict) -> Optional[str]:
-        """Deteça tentativas de DoS"""
-        # Verifica muitas conexões em pouco tempo
         recent_connections = self.connection_counts.get(ip, [])
-        if len(recent_connections) >= 20:  # 20 conexões
-            # Verifica se foram em rápido sucessão
+        if len(recent_connections) >= 20:  # 20 connections
             if len(recent_connections) >= 20:
                 time_diff = (recent_connections[-1] - recent_connections[0]).total_seconds()
-                if time_diff < 5:  # 20 conexões em menos de 5 segundos
+                if time_diff < 5:  # 20 connections in less 5 seconds
                     return 'dos_attempt'
         
         return None
     
     async def periodic_cleanup(self):
-        """Limpeza periódica de estado"""
         while True:
-            await asyncio.sleep(300)  # 5 minutos
+            await asyncio.sleep(300)
             
             now = datetime.now()
             cleanup_threshold = timedelta(hours=1)
             
-            # Limpa tentativas falhadas antigas
             for ip in list(self.failed_attempts.keys()):
                 self.failed_attempts[ip] = [
                     attempt for attempt in self.failed_attempts[ip]
@@ -299,8 +272,7 @@ class SecurityLayer:
                 ]
                 if not self.failed_attempts[ip]:
                     del self.failed_attempts[ip]
-            
-            # Limpa contagens de conexão antigas
+
             for ip in list(self.connection_counts.keys()):
                 self.connection_counts[ip] = [
                     conn for conn in self.connection_counts[ip]
@@ -309,7 +281,6 @@ class SecurityLayer:
                 if not self.connection_counts[ip]:
                     del self.connection_counts[ip]
             
-            # Limpa bloqueios temporários expirados
             expired_ips = [
                 ip for ip, block_until in self.temp_blocked.items()
                 if now >= block_until
@@ -320,7 +291,6 @@ class SecurityLayer:
             self.logger.debug("Security layer cleanup completed")
     
     def get_security_stats(self) -> Dict[str, Any]:
-        """Obtém estatísticas de segurança"""
         return {
             'blocked_ips_count': len(self.blocked_ips),
             'temp_blocked_count': len(self.temp_blocked),
@@ -329,7 +299,6 @@ class SecurityLayer:
         }
     
     def get_block_message(self, ip: str) -> str:
-        """Retorna mensagem de bloqueio para o IP"""
         if ip in self.blocked_ips:
             return f"IP {ip} permanently blocked"
         

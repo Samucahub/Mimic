@@ -1,6 +1,3 @@
-"""
-Emulador de servidor MySQL
-"""
 import asyncio
 import random
 import struct
@@ -8,7 +5,6 @@ from typing import Dict, Any
 from .base_service import BaseService
 
 class MySQLService(BaseService):
-    """Emula um servidor MySQL"""
     
     def __init__(self, port: int, config: Dict[str, Any]):
         super().__init__(port, config)
@@ -19,15 +15,12 @@ class MySQLService(BaseService):
         self.users = config.get('users', {'root': '', 'admin': 'password'})
         
     async def handle_connection(self, reader, writer):
-        """Manipula conexão MySQL"""
         client_ip = writer.get_extra_info('peername')[0]
         self.log_connection(client_ip)
         
         try:
-            # Handshake inicial
             await self.send_handshake(writer)
             
-            # Loop de processamento
             while self.is_running:
                 packet = await self.read_packet(reader)
                 if not packet:
@@ -42,7 +35,6 @@ class MySQLService(BaseService):
             await writer.wait_closed()
     
     async def send_handshake(self, writer):
-        """Envia handshake inicial MySQL"""
         # Packet header
         packet_length = 78
         sequence_id = 0
@@ -91,7 +83,6 @@ class MySQLService(BaseService):
         await writer.drain()
     
     async def read_packet(self, reader) -> bytes:
-        """Lê um pacote MySQL"""
         header = await reader.read(4)
         if len(header) < 4:
             return b''
@@ -103,7 +94,6 @@ class MySQLService(BaseService):
         return data
     
     async def process_packet(self, packet: bytes, reader, writer, client_ip: str):
-        """Processa pacote MySQL"""
         if len(packet) < 1:
             return
         
@@ -112,30 +102,26 @@ class MySQLService(BaseService):
         
         self.log_command(client_ip, f"MySQL Command: {command}")
         
-        if command == 1:  # COM_QUIT
+        if command == 1:  # WITH_QUIT
             await self.send_ok_packet(writer)
             
-        elif command == 3:  # COM_QUERY
+        elif command == 3:  # WITH_QUERY
             query = payload.decode('utf-8', errors='ignore').strip()
             self.logger.info(f"MySQL query from {client_ip}: {query}")
             
-            # Detecta SQL injection
             if self.detect_sql_injection(query):
                 self.logger.warning(f"SQL injection attempt from {client_ip}: {query}")
                 await self.send_error_packet(writer, "1064", "You have an error in your SQL syntax")
             else:
-                # Simula resposta de query
                 await self.send_query_response(writer, query)
         
-        elif command == 14:  # COM_PING
+        elif command == 14:  # WITH_PING
             await self.send_ok_packet(writer)
         
         else:
-            # Comando não suportado
             await self.send_error_packet(writer, "1047", "Unknown command")
     
     def detect_sql_injection(self, query: str) -> bool:
-        """Detecta tentativas de SQL injection"""
         query_lower = query.lower()
         
         dangerous_patterns = [
@@ -156,7 +142,6 @@ class MySQLService(BaseService):
         return any(pattern in query_lower for pattern in dangerous_patterns)
     
     async def send_query_response(self, writer, query: str):
-        """Envia resposta fake para query"""
         query_lower = query.lower()
         
         if 'show databases' in query_lower:
@@ -169,7 +154,6 @@ class MySQLService(BaseService):
             await self.send_resultset(writer, ['version()'], [self.version])
         
         elif 'select' in query_lower and 'from' in query_lower:
-            # Query SELECT genérica
             columns = ['id', 'name', 'email', 'created_at']
             rows = [
                 ['1', 'admin', 'admin@example.com', '2023-01-01'],
@@ -179,36 +163,27 @@ class MySQLService(BaseService):
             await self.send_resultset(writer, columns, rows)
         
         else:
-            # Query não reconhecida
             await self.send_ok_packet(writer, affected_rows=0)
     
     async def send_resultset(self, writer, columns: list, rows: list):
-        """Envia um resultset fake"""
-        # Número de colunas
         col_count = len(columns)
         col_count_packet = struct.pack('<I', col_count)[:1]
         await self.write_packet(writer, col_count_packet, 1)
-        
-        # Definições das colunas
+
         for i, col in enumerate(columns):
             col_def = self.build_column_definition(col, i)
             await self.write_packet(writer, col_def, 2 + i)
         
-        # EOF packet
         eof_packet = b'\xfe\x00\x00\x02\x00'
         await self.write_packet(writer, eof_packet, 2 + col_count)
-        
-        # Dados das linhas
+
         for i, row in enumerate(rows):
             row_data = self.build_row_data(row)
             await self.write_packet(writer, row_data, 3 + col_count + i)
         
-        # EOF final
         await self.write_packet(writer, eof_packet, 3 + col_count + len(rows))
     
     def build_column_definition(self, name: str, seq: int) -> bytes:
-        """Constrói definição de coluna"""
-        # Implementação simplificada
         catalog = b'def'
         schema = b''
         table = b''
@@ -220,8 +195,7 @@ class MySQLService(BaseService):
         type_code = 253  # VARCHAR
         flags = 0
         decimals = 0
-        
-        # Serializa campos (simplificado)
+
         parts = []
         parts.append(struct.pack('<B', len(catalog)))
         parts.append(catalog)
@@ -246,7 +220,6 @@ class MySQLService(BaseService):
         return b''.join(parts)
     
     def build_row_data(self, row: list) -> bytes:
-        """Constrói dados de linha"""
         data = bytearray()
         for value in row:
             if value is None:
@@ -258,7 +231,6 @@ class MySQLService(BaseService):
         return bytes(data)
     
     async def send_ok_packet(self, writer, affected_rows: int = 0):
-        """Envia pacote OK"""
         ok_packet = bytearray()
         ok_packet.append(0)  # Header
         ok_packet.extend(struct.pack('<I', affected_rows))
@@ -270,7 +242,6 @@ class MySQLService(BaseService):
         await self.write_packet(writer, ok_packet)
     
     async def send_error_packet(self, writer, error_code: str, message: str):
-        """Envia pacote de erro"""
         error_packet = bytearray()
         error_packet.append(0xff)  # Error packet header
         error_packet.extend(struct.pack('<H', int(error_code)))
@@ -281,7 +252,6 @@ class MySQLService(BaseService):
         await self.write_packet(writer, error_packet)
     
     async def write_packet(self, writer, data: bytes, sequence_id: int = 0):
-        """Escreve pacote MySQL"""
         length = len(data)
         header = struct.pack('<I', length)[:3] + struct.pack('<B', sequence_id)
         
