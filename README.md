@@ -256,17 +256,17 @@ All files sent via FTP end up in this folder storage.
 
 ```
 ftp_storage/
-├── home      # Users in system
-|   ├── Public
-|   |   ├── Desktop
-|   |   ├── Documents
-|   |   ├── ...
-|   └── User
-|       ├── Desktop
-|       ├── Documents
-|       |   └── notes.txt
-|       ├── ...
-|       └── welcome.txt
+└── home      # Users in system
+    ├── Public
+    |   ├── Desktop
+    |   ├── Documents
+    |   ├── ...
+    └── User
+        ├── Desktop
+        ├── Documents
+        |   └── notes.txt
+        ├── ...
+        └── welcome.txt
 ```
 
 ### Log Format (JSON Lines)
@@ -385,6 +385,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
