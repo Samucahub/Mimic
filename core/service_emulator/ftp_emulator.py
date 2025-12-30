@@ -18,8 +18,7 @@ class FTPService(BaseService):
         self.name = "FTP Server"
         self.banner = config.get('banner', '220 ProFTPD 1.3.5 Server (Debian)')
         self.anonymous_login = config.get('anonymous_login', True)
-        
-        # Suporta tanto users dict quanto username/password individual
+
         self.users = config.get('users', {})
         if 'username' in config and 'password' in config:
             self.users[config['username']] = config['password']
@@ -305,13 +304,11 @@ class FTPService(BaseService):
                 session['current_dir'] = Path('/pub')
                 self.ensure_user_directory('anonymous')
             else:
-                # Cria o diretório do usuário e aceita qualquer senha
                 self.ensure_user_directory(username)
                 session['current_dir'] = Path(f'/home/{username}')
             
-            # ADICIONAR: Registrar usuário no config.users para compatibilidade
             if username not in self.users:
-                self.users[username] = 'any'  # Qualquer senha funciona
+                self.users[username] = 'any'  # any password
             
             return "230 Login successful."
         else:
@@ -437,31 +434,21 @@ class FTPService(BaseService):
             session['passive_mode'] = True
             session['active_mode'] = None
             
-            # CORREÇÃO: Obter o IP real da interface de rede
-            # Método 1: Usar o IP do socket
             local_ip = '0.0.0.0'
             
-            # Tenta obter o IP da interface principal
             try:
-                # Cria um socket temporário para descobrir o IP
                 temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                # Não precisa realmente conectar, só precisamos do IP local
                 temp_sock.connect(('8.8.8.8', 80))
                 local_ip = temp_sock.getsockname()[0]
                 temp_sock.close()
             except:
-                # Fallback: usa o IP do hostname
                 try:
                     local_ip = socket.gethostbyname(socket.gethostname())
                 except:
-                    # Último fallback
-                    local_ip = '192.168.1.80'  # Substitua pelo seu IP real se necessário
+                    local_ip = '192.168.1.100'
             
-            # Garante que não é um IP de loopback
             if local_ip.startswith('127.'):
-                # Tenta obter um IP não-loopback
                 try:
-                    # Lista todas as interfaces
                     import netifaces
                     for interface in netifaces.interfaces():
                         addrs = netifaces.ifaddresses(interface)
@@ -472,15 +459,14 @@ class FTPService(BaseService):
                                     local_ip = ip
                                     break
                 except ImportError:
-                    # Se netifaces não estiver instalado, use um IP manual
-                    local_ip = '192.168.1.80'
+                    local_ip = '192.168.1.100'
             
             self.logger.info(f"PASV: Using IP {local_ip} for passive mode")
             
-            # Formata o IP para o formato FTP (x,x,x,x)
+            # IP format for FTP format (x,x,x,x)
             ip_parts = local_ip.split('.')
             if len(ip_parts) != 4:
-                ip_parts = ['192', '168', '1', '80']  # Fallback
+                ip_parts = ['192', '168', '1', '100']  # Fallback
             
             ip_address = ','.join(ip_parts)
             
