@@ -76,8 +76,14 @@ sudo python3 mimic.py
 
 **Windows:**
 ```bash
+Download of the last Mimic release
+
+OR
+
 # Clone the repository
 git clone https://github.com/Samucahub/mimic.git
+
+After:
 cd mimic
 
 # Install dependencies
@@ -86,18 +92,17 @@ pip install -r requirements.txt
 
 **Ubuntu/Linux:**
 ```bash
+Download of the last Mimic release
+
+OR
+
 # Clone the repository
 git clone https://github.com/Samucahub/mimic.git
+
+After:
 cd mimic
 
 sudo pip3 install -r requirements.txt
-
-# Option 2: Manual install
-# Windows
-pip install pygame pyyaml asyncssh
-
-# Linux
-pip3 install pygame pyyaml asyncssh
 ```
 
 ### Running MIMIC
@@ -114,7 +119,7 @@ python mimic.py
 # Normal ports (>1024)
 python3 mimic.py
 
-# For privileged ports (22, 21, 80, 23)
+# For privileged ports (21, 22, 23, 80)
 sudo python3 mimic.py
 
 # Or use the startup script
@@ -151,22 +156,39 @@ system:
   os_template: Ubuntu
 
 options:
-  any_auth: true          # Accept any credentials (honeypot mode)
-  human_patterns: true    # Simulate human response delays
+  any_auth: false
+  enable_logging: true
+  human_patterns: false
+  log_retention_days: 7
+security:
+  enabled: true
+  ip_blocking:
+    auto_block_failed_logins: 10
+  rate_limits:
+    block_duration_minutes: 60
+    max_connections_per_minute: 60
+    max_failed_logins: 10
+    window_seconds: 60
 
 services:
+  '21':
+    allow_download: false
+    allow_upload: false
+    anonymous_login: true
+    banner: 220 ProFTPD 1.3.5 Server (Debian)
+    enabled: true
+    max_file_size: 104857600  #100 MB
+    type: ftp
   '22':
+    banner: SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3
     enabled: true
     type: ssh
-  '21':
+  '23':
     enabled: true
-    type: ftp
-  '80':
-    enabled: true
-    type: http
+    type: telnet
 ```
 
-### OS Templates
+### OS Templates(Future)
 
 | Template | Description | Banner |
 |----------|-------------|--------|
@@ -208,7 +230,7 @@ Only accepts the configured username and password. Rejects all others.
 ssh admin@192.168.1.100 -p 22
 
 # FTP Connection
-ftp 192.168.1.100
+ftp 192.168.1.100 or Filezila
 
 # Scan with Nmap
 nmap -sV 192.168.1.100
@@ -226,6 +248,25 @@ logs/
 ├── ftp_honeypot.jsonl      # FTP connection logs
 ├── http_honeypot.jsonl     # HTTP request logs
 └── honeypot_output.log     # Main system log
+```
+
+### FTP Storage
+
+All files sent via FTP end up in this folder storage.
+
+```
+ftp_storage/
+├── home      # Users in system
+|   ├── Public
+|   |   ├── Desktop
+|   |   ├── Documents
+|   |   ├── ...
+|   └── User
+|       ├── Desktop
+|       ├── Documents
+|       |   └── notes.txt
+|       ├── ...
+|       └── welcome.txt
 ```
 
 ### Log Format (JSON Lines)
@@ -344,6 +385,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
