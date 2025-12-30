@@ -60,6 +60,12 @@ class MIMICController:
                     'any_auth': self.config.get('options', {}).get('any_auth', True),
                     'human_patterns': self.config.get('options', {}).get('human_patterns', True)
                 })
+                
+                if 'username' not in enriched_config:
+                    enriched_config['username'] = self.config.get('system', {}).get('username', 'admin')
+                if 'password' not in enriched_config:
+                    enriched_config['password'] = self.config.get('system', {}).get('password', 'admin123')
+                
                 service = FTPService(port, enriched_config)
             elif service_type == 'mysql':
                 from core.service_emulator.mysql_emulator import MySQLService
