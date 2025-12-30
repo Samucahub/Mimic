@@ -18,7 +18,12 @@ class FTPService(BaseService):
         self.name = "FTP Server"
         self.banner = config.get('banner', '220 ProFTPD 1.3.5 Server (Debian)')
         self.anonymous_login = config.get('anonymous_login', True)
+        
+        # Suporta tanto users dict quanto username/password individual
         self.users = config.get('users', {})
+        if 'username' in config and 'password' in config:
+            self.users[config['username']] = config['password']
+        
         self.virtual_root = Path("ftp_storage")
         self.current_user_dir: Dict[str, Path] = {}
         self.passive_ports = config.get('passive_ports', {'min': 49152, 'max': 65535})
@@ -298,10 +303,15 @@ class FTPService(BaseService):
             
             if username.lower() == 'anonymous':
                 session['current_dir'] = Path('/pub')
+                self.ensure_user_directory('anonymous')
             else:
+                # Cria o diretório do usuário e aceita qualquer senha
                 self.ensure_user_directory(username)
-                
                 session['current_dir'] = Path(f'/home/{username}')
+            
+            # ADICIONAR: Registrar usuário no config.users para compatibilidade
+            if username not in self.users:
+                self.users[username] = 'any'  # Qualquer senha funciona
             
             return "230 Login successful."
         else:
@@ -408,7 +418,7 @@ class FTPService(BaseService):
         else:
             return "504 Type not implemented"
     
-    async def handle_pasv(self, session: dict, client_ip: str) -> str:
+    async def handle_pasv(self, cmd_parts: List[str], session: dict) -> str:
         try:
             port = random.randint(self.passive_ports['min'], self.passive_ports['max'])
             
@@ -427,12 +437,52 @@ class FTPService(BaseService):
             session['passive_mode'] = True
             session['active_mode'] = None
             
-            import socket as sock_module
-            hostname = sock_module.gethostname()
-            local_ip = sock_module.gethostbyname(hostname)
-            ip_address = local_ip.replace('.', ',')
+            # CORREÇÃO: Obter o IP real da interface de rede
+            # Método 1: Usar o IP do socket
+            local_ip = '0.0.0.0'
+            
+            # Tenta obter o IP da interface principal
+            try:
+                # Cria um socket temporário para descobrir o IP
+                temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                # Não precisa realmente conectar, só precisamos do IP local
+                temp_sock.connect(('8.8.8.8', 80))
+                local_ip = temp_sock.getsockname()[0]
+                temp_sock.close()
+            except:
+                # Fallback: usa o IP do hostname
+                try:
+                    local_ip = socket.gethostbyname(socket.gethostname())
+                except:
+                    # Último fallback
+                    local_ip = '192.168.1.80'  # Substitua pelo seu IP real se necessário
+            
+            # Garante que não é um IP de loopback
+            if local_ip.startswith('127.'):
+                # Tenta obter um IP não-loopback
+                try:
+                    # Lista todas as interfaces
+                    import netifaces
+                    for interface in netifaces.interfaces():
+                        addrs = netifaces.ifaddresses(interface)
+                        if netifaces.AF_INET in addrs:
+                            for addr_info in addrs[netifaces.AF_INET]:
+                                ip = addr_info['addr']
+                                if not ip.startswith('127.'):
+                                    local_ip = ip
+                                    break
+                except ImportError:
+                    # Se netifaces não estiver instalado, use um IP manual
+                    local_ip = '192.168.1.80'
             
             self.logger.info(f"PASV: Using IP {local_ip} for passive mode")
+            
+            # Formata o IP para o formato FTP (x,x,x,x)
+            ip_parts = local_ip.split('.')
+            if len(ip_parts) != 4:
+                ip_parts = ['192', '168', '1', '80']  # Fallback
+            
+            ip_address = ','.join(ip_parts)
             
             p1 = port // 256
             p2 = port % 256
@@ -597,17 +647,15 @@ class FTPService(BaseService):
         return "226 Transfer complete"
     
     async def handle_stor(self, cmd_parts: List[str], session: dict, client_ip: str, control_writer, cmd: str) -> str:
+        """Processa comando STOR/APPE (upload)"""
         if not self.allow_upload:
+            self.logger.warning(f"Upload blocked from {client_ip} - upload disabled in config")
             return "553 Requested action not taken. Permission denied"
         
         if len(cmd_parts) < 2:
             return "501 Missing filename"
         
         filename = cmd_parts[1]
-        
-        self.logger.info(f"STOR: Starting upload of '{filename}'")
-        self.logger.info(f"STOR: Username: {session.get('username')}")
-        self.logger.info(f"STOR: Current dir: {session.get('current_dir')}")
         
         upload_dir = None
         
