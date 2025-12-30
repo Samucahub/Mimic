@@ -260,7 +260,7 @@ ftp_storage/
     ├── Public
     |   ├── Desktop
     |   ├── Documents
-    |   ├── ...
+    |   └── ...
     └── User
         ├── Desktop
         ├── Documents
@@ -385,6 +385,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
