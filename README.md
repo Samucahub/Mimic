@@ -1,9 +1,5 @@
-
-<p align="center">
-  <img src="/assets/mimic_banner.png" alt="banner"/>
-</p>
 <h1 align="center">
- (BETA)
+ MIMIC (BETA)
 </h1>
 
 <div align="center">
@@ -17,6 +13,10 @@
 *Every door is a mask. The audience is watching.*
 
 </div>
+
+<p align="center">
+  <img src="/assets/mimic_banner.png" alt="banner"/>
+</p>
 
 ---
 
