@@ -78,8 +78,11 @@ class InputBox:
             elif e.key == pygame.K_RETURN:
                 self.active = False
             else:
-                if len(self.text) < 30:
-                    self.text += e.unicode
+                if e.unicode.isdigit():
+                    if len(self.text) < 1:  # 1 digit max
+                        new_text = self.text + e.unicode
+                        if int(new_text) >= 1:  # 1 min
+                            self.text = new_text
 
 
 class Checkbox:
@@ -184,6 +187,7 @@ class MimicConfigurator:
         ]
 
         self.any_auth = Checkbox(100, 575, "Accept any credentials (honeypot)")
+        self.brute_force_test = InputBox(100, 640, 60, 30, "Brute-force test attempts", "1")
         self.human = Checkbox(100, 605, "Simulate human hesitation")
         
         self.enable_security = Checkbox(700, 575, "Enable security features", True)
@@ -275,6 +279,15 @@ class MimicConfigurator:
         self.screen.blit(options_label, (100, 535))
 
         self.any_auth.draw(self.screen, self.small)
+
+        if self.any_auth.checked:
+            self.brute_force_test.draw(self.screen, self.small)
+            note = self.small.render("Mimic recommends 3 for brute-force testing.", True, COLORS['gray'])
+            self.screen.blit(note, (100, 685))
+            self.human.rect.y = 725
+        else:
+            self.human.rect.y = 605
+        
         self.human.draw(self.screen, self.small)
         
         self.enable_security.draw(self.screen, self.small)
@@ -288,12 +301,12 @@ class MimicConfigurator:
             self.log_retention.draw(self.screen, self.small)
         
         os_label = self.font.render("OS TEMPLATE", True, COLORS['white'])
-        self.screen.blit(os_label, (100, 700))
+        self.screen.blit(os_label, (850, 210))
         
         mouse_pos = pygame.mouse.get_pos()
         for i, os_name in enumerate(self.os_templates):
-            x = 100 + i * 120
-            y = 750
+            x = 850 + i * 180
+            y = 260
             os_btn_rect = pygame.Rect(x, y, 180, 35)
             
             is_selected = (i == self.selected_os)
@@ -506,6 +519,10 @@ class MimicConfigurator:
                     for s in self.services:
                         s.handle_event(e)
                     self.any_auth.handle_event(e)
+
+                    if self.any_auth.checked:
+                        self.brute_force_test.handle_event(e)
+                    
                     self.human.handle_event(e)
                     self.enable_security.handle_event(e)
                     self.block_duration.handle_event(e)
@@ -564,6 +581,7 @@ class MimicConfigurator:
             },
             "options": {
                 "any_auth": self.any_auth.checked,
+                "brute_force_attempts": int(self.brute_force_test.text) if self.brute_force_test.text.isdigit() else 1,
                 "human_patterns": self.human.checked,
                 "enable_logging": self.enable_logging.checked,
                 "log_retention_days": int(self.log_retention.text) if self.log_retention.text.isdigit() else 7
