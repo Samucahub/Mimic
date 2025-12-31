@@ -1,5 +1,9 @@
+
+<p align="center">
+  <img src="/assets/mimic_banner.png" alt="banner"/>
+</p>
 <h1 align="center">
-MIMIC (BETA)
+ (BETA)
 </h1>
 
 <div align="center">
@@ -13,11 +17,6 @@ MIMIC (BETA)
 *Every door is a mask. The audience is watching.*
 
 </div>
-
-<p align="center">
-  <img src="/assets/mimic_banner.png" alt="banner"/>
-</p>
-
 ---
 
 ## Features
@@ -387,6 +386,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
