@@ -1,33 +1,38 @@
-version: '1.0'
-name: 'MIMIC Honeypot'
 system:
-  username: 'admin'
-  password: 'admin123'
-  hostname: 'dev-server'
-  os_template: 'Ubuntu'
+  username: admin
+  password: admin123
+  hostname: web-server
+  os_template: Ubuntu
+
 options:
   any_auth: true
-  human_patterns: true
+  brute_force_attempts: 3
   enable_logging: true
+  human_patterns: false
   log_retention_days: 7
 security:
   enabled: true
-  rate_limits:
-    max_connections_per_minute: 60
-    max_failed_logins: 10
-    block_duration_minutes: 60
-    window_seconds: 60
   ip_blocking:
     auto_block_failed_logins: 10
+  rate_limits:
+    block_duration_minutes: 60
+    max_connections_per_minute: 60
+    max_failed_logins: 10
+    window_seconds: 60
+
 services:
-  22:
-    type: 'ssh'
+  '21':
+    allow_download: false
+    allow_upload: false
+    anonymous_login: true
+    banner: 220 ProFTPD 1.3.5 Server (Debian)
     enabled: true
-    banner: 'SSH-2.0-OpenSSH_7.6p1'
-    command_timeout: 30
-    max_session_time: 3600
-behavior:
-  response_delay:
-    min: 0.1
-    max: 1.0
-  error_rate: 0.05
+    max_file_size: 104857600  #100 MB
+    type: ftp
+  '22':
+    banner: SSH-2.0-OpenSSH_7.6p1 Ubuntu-4ubuntu0.3
+    enabled: true
+    type: ssh
+  '23':
+    enabled: true
+    type: telnet
