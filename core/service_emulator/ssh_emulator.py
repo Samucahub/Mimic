@@ -195,9 +195,6 @@ class SSHServer(asyncssh.SSHServer):
         
         self.ssh_service.log_event("connection", {"client_ip": client_ip})
     
-    def connection_lost(self, exc):
-        pass
-    
     def validate_password(self, username, password):
         client_ip = self.conn.get_extra_info('peername')[0]
         self.username = username
@@ -212,24 +209,16 @@ class SSHServer(asyncssh.SSHServer):
         if client_ip not in self.ssh_service.failed_attempts:
             self.ssh_service.failed_attempts[client_ip] = {
                 'count': 0,
-                'attempts': [],
-                'last_attempt': datetime.now()
+                'attempts': []
             }
         
         ip_data = self.ssh_service.failed_attempts[client_ip]
-
-        time_since_last = (datetime.now() - ip_data.get('last_attempt', datetime.now())).total_seconds()
-        if time_since_last > 300:  # 5 min
-            print(f"[SSH] Auto-expired failed_attempts for {client_ip} (inactive for {int(time_since_last)}s)")
-            ip_data['count'] = 0
-            ip_data['attempts'] = []
-        
-        ip_data['last_attempt'] = datetime.now()
         current_attempt = (username, password)
         
         if self.ssh_service.any_auth:
+            ip_data['count'] += 1
+            
             if ip_data['count'] < self.ssh_service.brute_force_attempts:
-                ip_data['count'] += 1
                 ip_data['attempts'].append(current_attempt)
                 
                 print(f"[SSH] Brute-force test: failing attempt {ip_data['count']}/{self.ssh_service.brute_force_attempts} for {client_ip}")
@@ -249,45 +238,51 @@ class SSHServer(asyncssh.SSHServer):
                     "attempt_number": ip_data['count']
                 })
                 return False
-            
-            if current_attempt in ip_data['attempts']:
-                print(f"[SSH] Brute-force test: rejecting identical credentials ({username}/{password}) for {client_ip}")
+            else:
+                if current_attempt in ip_data['attempts']:
+                    print(f"[SSH] Brute-force test: rejecting identical credentials ({username}/{password}) for {client_ip}")
+                    
+                    if security_enabled and self.ssh_service.security:
+                        self.ssh_service.security.record_failed_attempt(client_ip)
+                    
+                    self.ssh_service.log_event("login_attempt", {
+                        "client_ip": client_ip,
+                        "username": username,
+                        "password": password,
+                        "success": False,
+                        "valid_credentials": False,
+                        "any_auth_mode": self.ssh_service.any_auth,
+                        "security_enabled": security_enabled,
+                        "brute_force_test": True,
+                        "identical_credentials": True,
+                        "attempt_number": ip_data['count']
+                    })
+                    return False
                 
-                if security_enabled and self.ssh_service.security:
-                    self.ssh_service.security.record_failed_attempt(client_ip)
+                # Adiciona tentativa bem-sucedida
+                ip_data['attempts'].append(current_attempt)
+                
+                # Sucesso após N tentativas com credenciais diferentes
+                print(f"[SSH] Brute-force test: success on attempt {ip_data['count']} for {client_ip}")
+                
+                # Reseta contador e lista após sucesso
+                ip_data['count'] = 0
+                ip_data['attempts'] = []
                 
                 self.ssh_service.log_event("login_attempt", {
                     "client_ip": client_ip,
                     "username": username,
                     "password": password,
-                    "success": False,
-                    "valid_credentials": False,
+                    "success": True,
+                    "valid_credentials": True,
                     "any_auth_mode": self.ssh_service.any_auth,
                     "security_enabled": security_enabled,
                     "brute_force_test": True,
-                    "identical_credentials": True,
                     "attempt_number": ip_data['count']
                 })
-                return False
-            
-            print(f"[SSH] Brute-force test: success on attempt {ip_data['count']} for {client_ip}")
-            
-            ip_data['count'] = 0
-            ip_data['attempts'] = []
-                
-            self.ssh_service.log_event("login_attempt", {
-                "client_ip": client_ip,
-                "username": username,
-                "password": password,
-                "success": True,
-                "valid_credentials": True,
-                "any_auth_mode": self.ssh_service.any_auth,
-                "security_enabled": security_enabled,
-                "brute_force_test": True,
-                "attempt_number": ip_data['count']
-            })
-            return True
+                return True
         else:
+            # Modo normal (sem any_auth)
             is_valid = username in self.ssh_service.users and self.ssh_service.users[username] == password
             
             if security_enabled and self.ssh_service.security:
