@@ -367,6 +367,9 @@ class FTPService(BaseService):
         
         ip_data = self.failed_attempts[client_ip]
         
+        # Debug logging
+        self.logger.info(f"[DEBUG] FTP Brute-force check for {client_ip}: count={ip_data.get('count', 'N/A')}, brute_force_attempts={self.brute_force_attempts}, attempts_list_size={len(ip_data.get('attempts', []))}")
+        
         time_since_last = (datetime.now() - ip_data.get('last_attempt', datetime.now())).total_seconds()
         if time_since_last > 300:  # 5 min
             self.logger.info(f"FTP Auto-expired failed_attempts for {client_ip} (inactive for {int(time_since_last)}s)")
@@ -378,7 +381,7 @@ class FTPService(BaseService):
         current_attempt = (username, password)
         
         if self.any_auth:
-            if ip_data['count'] < self.brute_force_attempts:
+            if ip_data['count'] < self.brute_force_attempts - 1:
                 ip_data['count'] += 1
                 ip_data['attempts'].append(current_attempt)
                 
