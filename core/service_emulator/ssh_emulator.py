@@ -196,9 +196,6 @@ class SSHServer(asyncssh.SSHServer):
         self.ssh_service.log_event("connection", {"client_ip": client_ip})
     
     def connection_lost(self, exc):
-        """Called when connection is lost or closed"""
-        # NÃO limpa failed_attempts aqui - deixa expirar por timeout (5 min)
-        # Isso mantém o histórico de tentativas mesmo após desconexão
         pass
     
     def validate_password(self, username, password):
@@ -220,10 +217,9 @@ class SSHServer(asyncssh.SSHServer):
             }
         
         ip_data = self.ssh_service.failed_attempts[client_ip]
-        
-        # Auto-expire: se passaram mais de 5 minutos, reseta
+
         time_since_last = (datetime.now() - ip_data.get('last_attempt', datetime.now())).total_seconds()
-        if time_since_last > 300:  # 5 minutos
+        if time_since_last > 300:  # 5 min
             print(f"[SSH] Auto-expired failed_attempts for {client_ip} (inactive for {int(time_since_last)}s)")
             ip_data['count'] = 0
             ip_data['attempts'] = []
@@ -232,7 +228,6 @@ class SSHServer(asyncssh.SSHServer):
         current_attempt = (username, password)
         
         if self.ssh_service.any_auth:
-            # Primeiras N-1 tentativas sempre falham
             if ip_data['count'] < self.ssh_service.brute_force_attempts:
                 ip_data['count'] += 1
                 ip_data['attempts'].append(current_attempt)
@@ -255,7 +250,6 @@ class SSHServer(asyncssh.SSHServer):
                 })
                 return False
             
-            # A partir da N-ésima tentativa: verifica se credenciais são diferentes
             if current_attempt in ip_data['attempts']:
                 print(f"[SSH] Brute-force test: rejecting identical credentials ({username}/{password}) for {client_ip}")
                 
