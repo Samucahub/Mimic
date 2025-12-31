@@ -78,8 +78,11 @@ class InputBox:
             elif e.key == pygame.K_RETURN:
                 self.active = False
             else:
-                if len(self.text) < 30:
-                    self.text += e.unicode
+                if e.unicode.isdigit():
+                    if len(self.text) < 1:  # 1 digit max
+                        new_text = self.text + e.unicode
+                        if int(new_text) >= 1:  # 1 min
+                            self.text = new_text
 
 
 class Checkbox:
@@ -96,7 +99,6 @@ class Checkbox:
             pygame.draw.line(screen, COLORS['white'], self.rect.topleft, self.rect.bottomright, 3)
             pygame.draw.line(screen, COLORS['white'], self.rect.topright, self.rect.bottomleft, 3)
 
-        # CORREÇÃO: Usar o parâmetro screen em vez de self.screen
         txt = font.render(self.label, True, COLORS['gray_light'])
         screen.blit(txt, (self.rect.x + 35, self.rect.y - 2))
 
@@ -171,8 +173,7 @@ class MimicConfigurator:
         self.username = InputBox(100, 240, 200, 35, "USERNAME", "admin")
         self.password = InputBox(320, 240, 200, 35, "PASSWORD", "admin123")
         self.hostname = InputBox(540, 240, 240, 35, "HOSTNAME", "stage-server")
-        
-        # ALTERAÇÃO: Apenas um template "Em desenvolvimento..."
+
         self.os_templates = ["Em desenvolvimento..."]
         self.selected_os = 0
 
@@ -186,6 +187,7 @@ class MimicConfigurator:
         ]
 
         self.any_auth = Checkbox(100, 575, "Accept any credentials (honeypot)")
+        self.brute_force_test = InputBox(100, 640, 60, 30, "Brute-force test attempts", "1")
         self.human = Checkbox(100, 605, "Simulate human hesitation")
         
         self.enable_security = Checkbox(700, 575, "Enable security features", True)
@@ -207,8 +209,6 @@ class MimicConfigurator:
         self.save_btn = Button(WIDTH - 430, HEIGHT - 80, 140, 50, "SAVE", self.save_config)
         self.start_btn = Button(WIDTH - 280, HEIGHT - 80, 230, 50, "Let The Show Begin!", self.start_honeypot)
 
-        # CORREÇÃO: As configurações do FTP serão posicionadas dinamicamente
-        # Armazenamos apenas as configurações, não as posições
         self.ftp_banner = InputBox(100, 0, 500, 35, "FTP Banner", "220 ProFTPD 1.3.5 Server (Debian)")
         self.allow_anonymous = Checkbox(100, 0, "Allow anonymous login", True)
         self.allow_upload = Checkbox(100, 0, "Allow file upload", True)
@@ -278,8 +278,16 @@ class MimicConfigurator:
         options_label = self.font.render("OPTIONS", True, COLORS['white'])
         self.screen.blit(options_label, (100, 535))
 
-        # CORREÇÃO: Passar self.screen como parâmetro para os checkboxes
         self.any_auth.draw(self.screen, self.small)
+
+        if self.any_auth.checked:
+            self.brute_force_test.draw(self.screen, self.small)
+            note = self.small.render("Mimic recommends 3 for brute-force testing.", True, COLORS['gray'])
+            self.screen.blit(note, (100, 685))
+            self.human.rect.y = 725
+        else:
+            self.human.rect.y = 605
+        
         self.human.draw(self.screen, self.small)
         
         self.enable_security.draw(self.screen, self.small)
@@ -293,12 +301,12 @@ class MimicConfigurator:
             self.log_retention.draw(self.screen, self.small)
         
         os_label = self.font.render("OS TEMPLATE", True, COLORS['white'])
-        self.screen.blit(os_label, (100, 700))
+        self.screen.blit(os_label, (850, 210))
         
         mouse_pos = pygame.mouse.get_pos()
         for i, os_name in enumerate(self.os_templates):
-            x = 100 + i * 120
-            y = 750
+            x = 850 + i * 180
+            y = 260
             os_btn_rect = pygame.Rect(x, y, 180, 35)
             
             is_selected = (i == self.selected_os)
@@ -330,8 +338,7 @@ class MimicConfigurator:
         enabled_services = [s.name for s in self.services if s.enabled]
         ssh_enabled = "SSH" in enabled_services
         ftp_enabled = "FTP" in enabled_services
-        
-        # CORREÇÃO: Mostrar título sempre que estiver na tela 2
+
         title = self.font_big.render("SERVICES  CONFIGURATION", True, COLORS['white'])
         self.screen.blit(title, (50, 40))
         
@@ -340,7 +347,6 @@ class MimicConfigurator:
         
         pygame.draw.line(self.screen, COLORS['gray_dark'], (50, 140), (WIDTH - 50, 140), 2)
         
-        # CORREÇÃO: Determinar se há serviços com configurações personalizáveis
         services_with_config = []
         y_position = 175
         
@@ -357,58 +363,48 @@ class MimicConfigurator:
             self.session_time.draw(self.screen, self.small)
             
             services_with_config.append("SSH")
-            y_position += 250  # Ajuste para posicionar próximo serviço abaixo
+            y_position += 250
 
         if ftp_enabled:
             ftp_label = self.font.render("FTP SETTINGS", True, COLORS['white'])
             self.screen.blit(ftp_label, (100, y_position))
             
-            # CORREÇÃO: Posicionar dinamicamente as configurações do FTP
             ftp_banner_y = y_position + 70
             self.ftp_banner.rect.y = ftp_banner_y
             self.ftp_banner.draw(self.screen, self.small)
             
-            # Posicionar checkboxes
             checkbox_start_y = ftp_banner_y + 70
             self.allow_anonymous.rect.y = checkbox_start_y
             self.allow_upload.rect.y = checkbox_start_y + 40
             self.allow_download.rect.y = checkbox_start_y + 80
             
-            # Desenhar checkboxes
             self.allow_anonymous.draw(self.screen, self.small)
             self.allow_upload.draw(self.screen, self.small)
             
-            # ALTERAÇÃO: Mostrar opções de download e tamanho máximo apenas se upload estiver habilitado
             if self.allow_upload.checked:
                 self.allow_download.draw(self.screen, self.small)
-                # Posicionar e desenhar o input box do tamanho máximo
                 self.max_upload_size.rect.y = checkbox_start_y + 65
-                self.max_upload_size.rect.x = 350  # Posição X fixa
+                self.max_upload_size.rect.x = 350
                 self.max_upload_size.draw(self.screen, self.small)
             else:
-                # Mostra mensagem informativa quando upload está desabilitado
                 upload_disabled_text = self.small.render("Upload desabilitado - download e tamanho máximo não aplicáveis", 
                                                         True, COLORS['gray'])
                 self.screen.blit(upload_disabled_text, (100, checkbox_start_y + 90))
             
             services_with_config.append("FTP")
-            y_position += 250  # Espaço para as configurações do FTP
-        
-        # CORREÇÃO: Posicionar "SELECTED SERVICES" e "SYSTEM INFO" no lado direito
-        # Se não há serviços com configurações, posiciona no lado esquerdo
+            y_position += 250
+
         if services_with_config:
-            services_x = 850  # Lado direito
+            services_x = 850
         else:
-            services_x = 100  # Lado esquerdo
-        
-        # CORREÇÃO: Ajustar a posição vertical das seções laterais também
-        # Se há serviços com configurações, posiciona as seções laterais mais para cima
-        services_y = 175  # Posição vertical inicial
+            services_x = 100
+
+        services_y = 175
         
         services_label = self.font.render("SELECTED SERVICES", True, COLORS['white'])
         self.screen.blit(services_label, (services_x, services_y))
         
-        y_offset = services_y + 45  # 45 pixels abaixo do título
+        y_offset = services_y + 45
         for service in self.services:
             if service.enabled:
                 service_text = self.small.render(f"[OK] {service.name} :{service.port}", True, COLORS['green'])
@@ -523,6 +519,10 @@ class MimicConfigurator:
                     for s in self.services:
                         s.handle_event(e)
                     self.any_auth.handle_event(e)
+
+                    if self.any_auth.checked:
+                        self.brute_force_test.handle_event(e)
+                    
                     self.human.handle_event(e)
                     self.enable_security.handle_event(e)
                     self.block_duration.handle_event(e)
@@ -545,7 +545,6 @@ class MimicConfigurator:
                         self.allow_anonymous.handle_event(e)
                         self.allow_upload.handle_event(e)
                         
-                        # ALTERAÇÃO: Só processa eventos de download e tamanho se upload estiver habilitado
                         if self.allow_upload.checked:
                             self.allow_download.handle_event(e)
                             self.max_upload_size.handle_event(e)
@@ -582,6 +581,7 @@ class MimicConfigurator:
             },
             "options": {
                 "any_auth": self.any_auth.checked,
+                "brute_force_attempts": int(self.brute_force_test.text) if self.brute_force_test.text.isdigit() else 1,
                 "human_patterns": self.human.checked,
                 "enable_logging": self.enable_logging.checked,
                 "log_retention_days": int(self.log_retention.text) if self.log_retention.text.isdigit() else 7
@@ -617,21 +617,14 @@ class MimicConfigurator:
                     "enabled": True,
                     "banner": banner
                 }
-                
-                # CORREÇÃO: Adicionar credenciais do sistema ao serviço FTP
+
                 if s.name == "FTP":
                     ftp_options = {}
                     if self.allow_anonymous.checked:
                         ftp_options["anonymous_login"] = True
                     
-                    # Adiciona as credenciais configuradas
-                    ftp_options["username"] = self.username.text
-                    ftp_options["password"] = self.password.text
-                    
-                    # Sempre adiciona allow_upload (True ou False)
                     ftp_options["allow_upload"] = self.allow_upload.checked
                     
-                    # Se upload está desabilitado, download também deve estar
                     if self.allow_upload.checked:
                         ftp_options["allow_download"] = self.allow_download.checked
                     else:
