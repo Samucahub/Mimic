@@ -195,6 +195,14 @@ class SSHServer(asyncssh.SSHServer):
         
         self.ssh_service.log_event("connection", {"client_ip": client_ip})
     
+    def connection_lost(self, exc):
+        """Called when connection is lost or closed"""
+        if hasattr(self, 'conn'):
+            client_ip = self.conn.get_extra_info('peername')[0]
+            if client_ip in self.ssh_service.failed_attempts:
+                del self.ssh_service.failed_attempts[client_ip]
+                print(f"[SSH] Cleared failed_attempts data for {client_ip}")
+    
     def validate_password(self, username, password):
         client_ip = self.conn.get_extra_info('peername')[0]
         self.username = username
