@@ -230,6 +230,10 @@ class FTPService(BaseService):
         except Exception as e:
             self.logger.error(f"FTP error from {client_ip}: {e}")
         finally:
+            if client_ip in self.failed_attempts:
+                del self.failed_attempts[client_ip]
+                self.logger.debug(f"Cleared failed_attempts data for {client_ip}")
+            
             if session.get('data_writer'):
                 session['data_writer'].close()
                 await session['data_writer'].wait_closed()
