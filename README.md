@@ -158,7 +158,8 @@ system:
   os_template: Ubuntu
 
 options:
-  any_auth: false
+  any_auth: true
+  brute_force_attempts: 3
   enable_logging: true
   human_patterns: false
   log_retention_days: 7
@@ -258,14 +259,13 @@ All files sent via FTP end up in this folder storage.
 
 ```
 ftp_storage/
-└── home      # Users in system
-    ├── Public
-    |   ├── Desktop
-    |   ├── Documents
-    |   └── ...
-    └── User
-        ├── Desktop
-        ├── Documents
+└── home/             # Users in system
+    ├── ftpuser       # User default in FTP service
+    |   └── files/
+    |
+    └── $username/    # This file is named based on the configured username
+        ├── Desktop/
+        ├── Documents/
         |   └── notes.txt
         ├── ...
         └── welcome.txt
@@ -300,11 +300,12 @@ mimic/
 ├── mimic.py                # Visual GUI
 ├── config/
 │   ├── honeypot.yaml      # Main configuration
-│   └── templates/         # OS templates
+│   └── templates/         # OS templates (future)
 ├── core/
 │   ├── controller.py      # Service orchestration
 │   ├── port_manager.py    # Port validation
 │   ├── security_layer.py  # Security checks
+|   ├── config_manager.py  # Config File Management
 │   └── service_emulator/
 │       ├── ssh_emulator.py
 │       ├── ftp_emulator.py
@@ -312,6 +313,9 @@ mimic/
 │       └── ...
 ├── log_system/
 │   └── session_logger.py  # Logging framework
+|
+├── ftp_storage/           # FTP service Storage
+|
 └── logs/                  # Generated logs
 ```
 
@@ -387,6 +391,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
