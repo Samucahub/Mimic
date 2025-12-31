@@ -230,9 +230,6 @@ class FTPService(BaseService):
         except Exception as e:
             self.logger.error(f"FTP error from {client_ip}: {e}")
         finally:
-            if client_ip in self.failed_attempts:
-                del self.failed_attempts[client_ip]
-                self.logger.debug(f"Cleared failed_attempts data for {client_ip}")
             
             if session.get('data_writer'):
                 session['data_writer'].close()
@@ -364,17 +361,25 @@ class FTPService(BaseService):
         if client_ip not in self.failed_attempts:
             self.failed_attempts[client_ip] = {
                 'count': 0,
-                'attempts': []
+                'attempts': [],
+                'last_attempt': datetime.now()
             }
         
         ip_data = self.failed_attempts[client_ip]
+        
+        time_since_last = (datetime.now() - ip_data.get('last_attempt', datetime.now())).total_seconds()
+        if time_since_last > 300:  # 5 min
+            self.logger.info(f"FTP Auto-expired failed_attempts for {client_ip} (inactive for {int(time_since_last)}s)")
+            ip_data['count'] = 0
+            ip_data['attempts'] = []
+        
+        ip_data['last_attempt'] = datetime.now()
         password = cmd_parts[1] if len(cmd_parts) > 1 else ""
         current_attempt = (username, password)
         
         if self.any_auth:
-            ip_data['count'] += 1
-
             if ip_data['count'] < self.brute_force_attempts:
+                ip_data['count'] += 1
                 ip_data['attempts'].append(current_attempt)
                 
                 self.logger.info(f"FTP Brute-force test: failing attempt {ip_data['count']}/{self.brute_force_attempts} for {client_ip}")
@@ -382,7 +387,6 @@ class FTPService(BaseService):
             
             if current_attempt in ip_data['attempts']:
                 self.logger.info(f"FTP Brute-force test: rejecting identical credentials ({username}/{password}) for {client_ip}")
-                ip_data['count'] += 1
                 return "530 Login incorrect."
             
             self.logger.info(f"FTP Brute-force test: success on attempt {ip_data['count']} for {client_ip}")
