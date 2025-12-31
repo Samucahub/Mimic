@@ -1,4 +1,6 @@
-# MIMIC (BETA)
+<h1 align="center">
+MIMIC (BETA)
+</h1>
 
 <div align="center">
 
@@ -385,6 +387,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
