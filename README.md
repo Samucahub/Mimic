@@ -1,4 +1,4 @@
-# 🎭 MIMIC - Multi-Interface Mimicry & Intrusion Capture
+# MIMIC (BETA) - Multi-Interface Mimicry & Intrusion Capture
 
 <div align="center">
 
@@ -385,6 +385,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
