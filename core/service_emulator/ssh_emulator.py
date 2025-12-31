@@ -20,6 +20,8 @@ class SSHService:
             self.security_enabled = security_layer.enabled
 
         self.any_auth = config.get('any_auth', True)
+        self.brute_force_attempts = config.get('brute_force_attempts', 1)
+        self.failed_attempts = {}
         self.username = config.get('username', 'admin')
         
         if not self.any_auth:
@@ -150,6 +152,22 @@ class SSHService:
             self.server.close()
             await self.server.wait_closed()
 
+    async def cleanup_failed_attempts(self):
+        import time
+        while self.is_running:
+            await asyncio.sleep(300)  # 5 min
+            
+            current_time = time.time()
+            to_remove = []
+            
+            for ip, data in self.failed_attempts.items():
+                if hasattr(data, 'last_attempt'):
+                    if current_time - data.last_attempt > 3600:
+                        to_remove.append(ip)
+            
+            for ip in to_remove:
+                del self.failed_attempts[ip]
+
 
 class SSHServer(asyncssh.SSHServer):
     
@@ -187,34 +205,102 @@ class SSHServer(asyncssh.SSHServer):
             if not self.ssh_service.security.is_ip_allowed(client_ip):
                 print(f"[SECURITY] Blocked login attempt from blocked IP: {client_ip}")
                 return False
+        
+        if client_ip not in self.ssh_service.failed_attempts:
+            self.ssh_service.failed_attempts[client_ip] = {
+                'count': 0,
+                'attempts': []
+            }
+        
+        ip_data = self.ssh_service.failed_attempts[client_ip]
+        current_attempt = (username, password)
+        
+        if self.ssh_service.any_auth:
+            ip_data['count'] += 1
             
-        is_valid = username in self.ssh_service.users and self.ssh_service.users[username] == password
-        accept = True if self.ssh_service.any_auth else is_valid
-        
-        if security_enabled and self.ssh_service.security:
-            if not accept or not is_valid:
-                self.ssh_service.security.record_failed_attempt(client_ip)
-                print(f"[SECURITY] Failed login attempt from {client_ip}")
+            if ip_data['count'] < self.ssh_service.brute_force_attempts:
+                ip_data['attempts'].append(current_attempt)
                 
-                if not self.ssh_service.security.check_rate_limit(client_ip):
-                    print(f"[SECURITY] Blocking IP {client_ip} for too many failed attempts")
-                    self.ssh_service.security.temp_block_ip(client_ip)
-                    return False
+                print(f"[SSH] Brute-force test: failing attempt {ip_data['count']}/{self.ssh_service.brute_force_attempts} for {client_ip}")
+                
+                if security_enabled and self.ssh_service.security:
+                    self.ssh_service.security.record_failed_attempt(client_ip)
+                
+                self.ssh_service.log_event("login_attempt", {
+                    "client_ip": client_ip,
+                    "username": username,
+                    "password": password,
+                    "success": False,
+                    "valid_credentials": False,
+                    "any_auth_mode": self.ssh_service.any_auth,
+                    "security_enabled": security_enabled,
+                    "brute_force_test": True,
+                    "attempt_number": ip_data['count']
+                })
+                return False
+            
+            if current_attempt in ip_data['attempts']:
+                print(f"[SSH] Brute-force test: rejecting identical credentials ({username}/{password}) for {client_ip}")
+                ip_data['count'] += 1
+                
+                if security_enabled and self.ssh_service.security:
+                    self.ssh_service.security.record_failed_attempt(client_ip)
+                
+                self.ssh_service.log_event("login_attempt", {
+                    "client_ip": client_ip,
+                    "username": username,
+                    "password": password,
+                    "success": False,
+                    "valid_credentials": False,
+                    "any_auth_mode": self.ssh_service.any_auth,
+                    "security_enabled": security_enabled,
+                    "brute_force_test": True,
+                    "identical_credentials": True,
+                    "attempt_number": ip_data['count']
+                })
+                return False
+            
+            print(f"[SSH] Brute-force test: success on attempt {ip_data['count']} for {client_ip}")
+            
+            ip_data['count'] = 0
+            ip_data['attempts'] = []
+                
+            self.ssh_service.log_event("login_attempt", {
+                "client_ip": client_ip,
+                "username": username,
+                "password": password,
+                "success": True,
+                "valid_credentials": True,
+                "any_auth_mode": self.ssh_service.any_auth,
+                "security_enabled": security_enabled,
+                "brute_force_test": True,
+                "attempt_number": ip_data['count']
+            })
+            return True
         else:
-            if not accept or not is_valid:
-                print(f"[INFO] Login attempt (security disabled) from {client_ip}")
-        
-        self.ssh_service.log_event("login_attempt", {
-            "client_ip": client_ip,
-            "username": username,
-            "password": password,
-            "success": accept,
-            "valid_credentials": is_valid,
-            "any_auth_mode": self.ssh_service.any_auth,
-            "security_enabled": security_enabled
-        })
-        
-        return accept
+            is_valid = username in self.ssh_service.users and self.ssh_service.users[username] == password
+            
+            if security_enabled and self.ssh_service.security:
+                if not is_valid:
+                    self.ssh_service.security.record_failed_attempt(client_ip)
+                    print(f"[SECURITY] Failed login attempt from {client_ip}")
+                    
+                    if not self.ssh_service.security.check_rate_limit(client_ip):
+                        print(f"[SECURITY] Blocking IP {client_ip} for too many failed attempts")
+                        self.ssh_service.security.temp_block_ip(client_ip)
+                        return False
+            
+            self.ssh_service.log_event("login_attempt", {
+                "client_ip": client_ip,
+                "username": username,
+                "password": password,
+                "success": is_valid,
+                "valid_credentials": is_valid,
+                "any_auth_mode": self.ssh_service.any_auth,
+                "security_enabled": security_enabled
+            })
+            
+            return is_valid
         
     def begin_auth(self, username):
         if hasattr(self, 'connection_closed') and self.connection_closed:
