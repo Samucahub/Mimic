@@ -45,6 +45,9 @@ class MIMICController:
                     enriched_config['scp_redirect_port'] = 2222
                     enriched_config['sftp_redirect_port'] = 2223
                 
+                enriched_config['any_auth'] = self.config.get('options', {}).get('any_auth', True)
+                enriched_config['brute_force_attempts'] = self.config.get('options', {}).get('brute_force_attempts', 1)
+                
                 service = SSHService(port, enriched_config, self.security)
             elif service_type == 'http':
                 from core.service_emulator.http_emulator import HTTPService
@@ -58,7 +61,8 @@ class MIMICController:
                     'hostname': self.config.get('system', {}).get('hostname', 'ubuntu-server'),
                     'os_template': self.config.get('system', {}).get('os_template', 'Ubuntu'),
                     'any_auth': self.config.get('options', {}).get('any_auth', True),
-                    'human_patterns': self.config.get('options', {}).get('human_patterns', True)
+                    'human_patterns': self.config.get('options', {}).get('human_patterns', True),
+                    'brute_force_attempts': self.config.get('options', {}).get('brute_force_attempts', 1)
                 })
                 
                 if 'username' not in enriched_config:
