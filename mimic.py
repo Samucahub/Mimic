@@ -581,7 +581,6 @@ class MimicConfigurator:
             },
             "options": {
                 "any_auth": self.any_auth.checked,
-                "brute_force_attempts": int(self.brute_force_test.text) if self.brute_force_test.text.isdigit() else 1,
                 "human_patterns": self.human.checked,
                 "enable_logging": self.enable_logging.checked,
                 "log_retention_days": int(self.log_retention.text) if self.log_retention.text.isdigit() else 7
@@ -600,6 +599,9 @@ class MimicConfigurator:
             },
             "services": {}
         }
+        
+        if self.any_auth.checked:
+            config["options"]["brute_force_attempts"] = int(self.brute_force_test.text) if self.brute_force_test.text.isdigit() else 1
         
         for s in self.services:
             if s.enabled:
