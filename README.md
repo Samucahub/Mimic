@@ -1,14 +1,8 @@
-
-<table align="center" width="100%">
-  <tr>
-    <td align="center" valign="middle">
-      <img src="assets/mimic_logo_animation" width="100%" />
-      <br><br>
-      <h1>MIMIC Honeypot Framework (BETA)</h1>
-    </td>
-  </tr>
-</table>
-
+<td align="center" valign="middle">
+  <img src="assets/mimic_logo_animation.gif" width="100%" />
+  <br><br>
+  <h1>MIMIC Honeypot Framework (BETA)</h1>
+</td>
 
 <div align="center">
 
@@ -399,6 +393,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
