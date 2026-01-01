@@ -1,5 +1,5 @@
 <td align="center" valign="middle">
-  <img src="assets/mimic_logo_animation.gif" width="100%" />
+  <img src="assets/mimic_logo_animation.gif" width="10%" />
   <br><br>
   <h1>MIMIC Honeypot Framework (BETA)</h1>
 </td>
@@ -393,6 +393,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
