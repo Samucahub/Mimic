@@ -1,6 +1,6 @@
 <h1 align="center">
  MIMIC (BETA)
- <img src="assets/mimic_logo.gif" alt="logo gif" width="50"/>
+ <img src="assets/mimic_logo_animation.gif" alt="logo gif" width="75"/>
 </h1>
 
 <div align="center">
@@ -392,6 +392,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
