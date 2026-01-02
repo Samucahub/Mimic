@@ -11,6 +11,9 @@ from pathlib import Path
 
 pygame.init()
 
+icon = pygame.image.load("assets/mimic_logo.png")
+pygame.display.set_icon(icon)
+
 COLORS = {
     'bg': (5, 5, 5),
     'bg_alt': (20, 20, 20),
@@ -23,7 +26,7 @@ COLORS = {
     'blue': (100, 150, 255),
 }
 
-WIDTH, HEIGHT = 1400, 900
+WIDTH, HEIGHT = 1200, 800
 FPS = 60
 
 class Button:
@@ -178,25 +181,25 @@ class MimicConfigurator:
         self.selected_os = 0
 
         self.services = [
-            ServiceCard(100, 350, 380, 75, "SSH", "22", "[S]", True),
-            ServiceCard(500, 350, 380, 75, "FTP", "21", "[F]"),
-            ServiceCard(900, 350, 380, 75, "HTTP", "80", "[H]"),
-            ServiceCard(100, 440, 380, 75, "TELNET", "23", "[T]"),
-            ServiceCard(500, 440, 380, 75, "MYSQL", "3306", "[M]"),
-            ServiceCard(900, 440, 380, 75, "RDP", "3389", "[R]"),
+            ServiceCard(100, 350, 300, 75, "SSH", "22", "[S]", True),
+            ServiceCard(450, 350, 300, 75, "FTP", "21", "[F]"),
+            ServiceCard(800, 350, 300, 75, "HTTP", "80", "[H]"),
+            ServiceCard(100, 440, 300, 75, "TELNET", "23", "[T]"),
+            ServiceCard(450, 440, 300, 75, "MYSQL", "3306", "[M]"),
+            ServiceCard(800, 440, 300, 75, "RDP", "3389", "[R]"),
         ]
 
         self.any_auth = Checkbox(100, 575, "Accept any credentials (honeypot)")
         self.brute_force_test = InputBox(100, 640, 60, 30, "Brute-force test attempts", "1")
         self.human = Checkbox(100, 605, "Simulate human hesitation")
         
-        self.enable_security = Checkbox(700, 575, "Enable security features", True)
-        self.block_duration = InputBox(950, 575, 80, 30, "Block (min)", "60")
-        self.max_failed_logins = InputBox(1050, 575, 80, 30, "Max fails", "10")
-        self.max_connections = InputBox(1150, 575, 80, 30, "Max/min", "60")
+        self.enable_security = Checkbox(500, 575, "Enable security features", True)
+        self.block_duration = InputBox(750, 575, 80, 30, "Block (min)", "60")
+        self.max_failed_logins = InputBox(850, 575, 80, 30, "Max fails", "10")
+        self.max_connections = InputBox(950, 575, 80, 30, "Max/min", "60")
         
-        self.enable_logging = Checkbox(700, 645, "Enable detailed logging", True)
-        self.log_retention = InputBox(950, 640, 80, 30, "Days", "7")
+        self.enable_logging = Checkbox(500, 645, "Enable detailed logging", True)
+        self.log_retention = InputBox(750, 640, 80, 30, "Days", "7")
 
         self.next_btn = Button(WIDTH - 230, HEIGHT - 80, 160, 50, "NEXT", self.go_to_screen2)
 
@@ -204,16 +207,15 @@ class MimicConfigurator:
         self.command_timeout = InputBox(100, 370, 150, 30, "Cmd timeout (s)", "30")
         self.session_time = InputBox(270, 370, 150, 30, "Max session (s)", "3600")
         
-
-        self.back_btn = Button(WIDTH - 580, HEIGHT - 80, 140, 50, "BACK", self.go_to_screen1)
-        self.save_btn = Button(WIDTH - 430, HEIGHT - 80, 140, 50, "SAVE", self.save_config)
-        self.start_btn = Button(WIDTH - 280, HEIGHT - 80, 230, 50, "Let The Show Begin!", self.start_honeypot)
-
         self.ftp_banner = InputBox(100, 0, 500, 35, "FTP Banner", "220 ProFTPD 1.3.5 Server (Debian)")
         self.allow_anonymous = Checkbox(100, 0, "Allow anonymous login", True)
         self.allow_upload = Checkbox(100, 0, "Allow file upload", True)
         self.allow_download = Checkbox(100, 0, "Allow file download", True)
         self.max_upload_size = InputBox(100, 0, 150, 30, "Max upload size (MB)", "100")
+
+        self.back_btn = Button(WIDTH - 580, HEIGHT - 80, 140, 50, "BACK", self.go_to_screen1)
+        self.save_btn = Button(WIDTH - 430, HEIGHT - 80, 140, 50, "SAVE", self.save_config)
+        self.start_btn = Button(WIDTH - 280, HEIGHT - 80, 230, 50, "Let The Show Begin!", self.start_honeypot)
 
         self.honeypot_process = None
         self.honeypot_running = False
@@ -240,8 +242,9 @@ class MimicConfigurator:
 
     def draw_spotlight(self):
         light = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        for r in range(600, 0, -30):
-            pygame.draw.circle(light, (255,255,255,4), (WIDTH//2, HEIGHT//2), r)
+        for r in range(500, 0, -50):
+            alpha = int(10 * (1 - r/500))
+            pygame.draw.circle(light, (255,255,255,alpha), (WIDTH//2.25, HEIGHT//2), r)
         self.screen.blit(light, (0,0))
 
     def draw_eyes(self):
@@ -254,11 +257,11 @@ class MimicConfigurator:
 
     def draw_header(self):
         title = self.font_big.render("M I M I C", True, COLORS['white'])
-        self.screen.blit(title, (50, 40))
+        self.screen.blit(title, (70, 40))
         self.draw_eyes()
 
         sub = self.small.render("Every port is a mask.", True, COLORS['gray_light'])
-        self.screen.blit(sub, (50, 105))
+        self.screen.blit(sub, (70, 105))
     
     def draw_screen1(self):
         identity_label = self.font.render("IDENTITY", True, COLORS['white'])
