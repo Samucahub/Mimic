@@ -18,11 +18,16 @@ class FTPService(BaseService):
         self.name = "FTP Server"
         self.banner = config.get('banner', '220 ProFTPD 1.3.5 Server (Debian)')
         self.anonymous_login = config.get('anonymous_login', True)
-        
-        # Suporta tanto users dict quanto username/password individual
+
         self.users = config.get('users', {})
-        if 'username' in config and 'password' in config:
-            self.users[config['username']] = config['password']
+        self.config_username = config.get('username', 'admin')
+        self.config_password = config.get('password', 'admin123')
+        
+        if self.config_username and self.config_username not in self.users:
+            self.users[self.config_username] = self.config_password
+
+        if 'ftpuser' not in self.users:
+            self.users['ftpuser'] = 'ftpuser123'
         
         self.virtual_root = Path("ftp_storage")
         self.current_user_dir: Dict[str, Path] = {}
@@ -35,9 +40,11 @@ class FTPService(BaseService):
         self.hostname = config.get('hostname', 'ubuntu-server')
         self.os_template = config.get('os_template', 'Ubuntu')
         self.any_auth = config.get('any_auth', True)
+        self.brute_force_attempts = config.get('brute_force_attempts', 1)
+        self.failed_attempts = {}
         
         self.virtual_root.mkdir(exist_ok=True, parents=True)
-        self.create_default_filesystem()
+        self.create_realistic_filesystem()
         self.debug_directory_structure()
         
         self.data_connections: Dict[str, Any] = {}
@@ -48,72 +55,125 @@ class FTPService(BaseService):
         self.logger.info(f"Anonymous login: {self.anonymous_login}")
         self.logger.info(f"Allow upload: {self.allow_upload}")
         self.logger.info(f"Allow download: {self.allow_download}")
+        self.logger.info(f"Configured users: {list(self.users.keys())}")
     
     def ensure_user_directory(self, username: str) -> Path:
-        user_dir = self.virtual_root / "home" / username
+        
+        home_dir = self.virtual_root / "home"
+        home_dir.mkdir(exist_ok=True, parents=True)
+        
+        user_dir = home_dir / username
         user_dir.mkdir(exist_ok=True, parents=True)
         
-        welcome_file = user_dir / "welcome.txt"
-        if not welcome_file.exists():
-            welcome_content = f"Welcome {username}!\n\nThis is your home directory.\nServer: {self.hostname}\nOS: {self.os_template}\n"
-            welcome_file.write_text(welcome_content, encoding='utf-8')
+        if username.lower() == 'ftpuser':
+            files_dir = user_dir / "files"
+            files_dir.mkdir(exist_ok=True, parents=True)
+            
+            readme_file = files_dir / "readme.txt"
+            if not readme_file.exists():
+                readme_content = f"FTP User Files\n\nServer: {self.hostname}\nCreated: {datetime.now().strftime('%Y-%m-%d')}\n"
+                readme_file.write_text(readme_content, encoding='utf-8')
+            
+            self.current_user_dir[username] = user_dir
+            self.logger.info(f"[FTP] Created ftpuser directory with /files: {user_dir}")
+            return user_dir
         
-        common_subdirs = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos', 'Public']
+        common_subdirs = [
+            'Desktop',
+            'Documents',
+            'Downloads',
+            'Pictures',
+            'Music',
+            'Videos'
+        ]
+        
         for subdir in common_subdirs:
-            (user_dir / subdir).mkdir(exist_ok=True)
+            subdir_path = user_dir / subdir
+            subdir_path.mkdir(exist_ok=True)
             
             if subdir == 'Documents':
                 notes_file = user_dir / subdir / "notes.txt"
                 if not notes_file.exists():
-                    notes_content = f"User documents for {username}\n\nCreated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    notes_content = f"Personal notes for {username}\n\nSystem: {self.hostname}\nCreated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                     notes_file.write_text(notes_content, encoding='utf-8')
+                    
             elif subdir == 'Downloads':
                 readme_file = user_dir / subdir / "README.txt"
                 if not readme_file.exists():
                     readme_content = f"Download directory for {username}\n\nServer: {self.hostname}\n"
                     readme_file.write_text(readme_content, encoding='utf-8')
         
-        self.logger.info(f"Created/verified user directory for: {username}")
+        self.current_user_dir[username] = user_dir
+        self.logger.info(f"[FTP] Created user directory for {username}: {user_dir}")
         return user_dir
 
-    def create_default_filesystem(self):
+    def create_realistic_filesystem(self):
         home_dir = self.virtual_root / "home"
         home_dir.mkdir(exist_ok=True, parents=True)
         
-        for username in ['admin123', 'ftpuser']:
-            user_dir = home_dir / username
-            user_dir.mkdir(exist_ok=True, parents=True)
-            
-            subdirs = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']
-            for subdir in subdirs:
-                (user_dir / subdir).mkdir(exist_ok=True)
-            
-            notes_file = user_dir / 'Documents' / 'notes.txt'
-            if not notes_file.exists():
-                notes_content = f"User documents for {username}\n\nCreated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                notes_file.write_text(notes_content, encoding='utf-8')
+        ftpuser_dir = home_dir / "ftpuser"
+        ftpuser_dir.mkdir(exist_ok=True, parents=True)
+        files_dir = ftpuser_dir / "files"
+        files_dir.mkdir(exist_ok=True, parents=True)
         
-        self.logger.info(f"[FTP] Created simple filesystem: /home/{{admin123,ftpuser}}")
+        sample_file = files_dir / "readme.txt"
+        if not sample_file.exists():
+            sample_content = f"FTP User Files Directory\n\nServer: {self.hostname}\nUser: ftpuser\nCreated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            sample_file.write_text(sample_content, encoding='utf-8')
+        
+        if self.config_username and self.config_username.lower() != 'ftpuser':
+            self.ensure_user_directory(self.config_username)
+        
+        self.logger.info(f"[FTP] Created simple filesystem: /home/ftpuser/files and /home/{self.config_username}/{{Documents,Downloads,...}}")
     
     def generate_system_log(self) -> str:
         log_entries = []
-        for i in range(20):
-            timestamp = (datetime.now() - timedelta(minutes=random.randint(0, 1440))).strftime("%b %d %H:%M:%S")
+        for i in range(50):
+            timestamp = (datetime.now() - timedelta(minutes=random.randint(0, 10080))).strftime("%b %d %H:%M:%S")
             hostname = self.hostname
-            process = random.choice(["sshd", "ftpd", "cron", "systemd", "kernel"])
+            
+            processes = [
+                ("systemd", "Started User Manager for UID 1000"),
+                ("kernel", f"TCP: time wait bucket table overflow"),
+                ("sshd", f"Accepted password for {self.config_username} from 192.168.1.{random.randint(1, 254)} port {random.randint(1000, 9999)}"),
+                ("cron", f"(root) CMD (cd / && run-parts --report /etc/cron.hourly)"),
+                ("ftpd", f"FTP session opened for {random.choice(list(self.users.keys()))}"),
+                ("apache2", f"AH00094: Command line: '/usr/sbin/apache2'"),
+                ("systemd-logind", f"New session {random.randint(1000, 9999)} of user {self.config_username}."),
+                ("dbus-daemon", f"[session uid={random.randint(1000, 2000)} pid={random.randint(1000, 9999)}] Successfully activated service 'org.freedesktop.ColorManager'"),
+                ("NetworkManager", f"<info>  [1700000000.0000] device (eth0): state change: ip-config -> ip-check (reason 'none')"),
+                ("systemd-timesyncd", f"Synchronized to time server {random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}:123 (ntp.ubuntu.com).")
+            ]
+            
+            process, message = random.choice(processes)
             pid = random.randint(100, 9999)
-            message = random.choice([
-                f"Connection from {random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)} port {random.randint(1000, 9999)}",
-                "User login from 192.168.1.100",
-                "System reboot required",
-                "Disk space usage: 45%",
-                "Network interface eth0 up",
-                "CRON[{}]: (root) CMD (cd / && run-parts --report /etc/cron.hourly)".format(pid),
-                "kernel: [{}] TCP: time wait bucket table overflow".format(random.randint(1000000, 9999999))
-            ])
+            
             log_entries.append(f"{timestamp} {hostname} {process}[{pid}]: {message}")
         
-        return "\n".join(log_entries)
+        return "\n".join(sorted(log_entries))
+    
+    def generate_auth_log(self) -> str:
+        log_entries = []
+        for i in range(30):
+            timestamp = (datetime.now() - timedelta(minutes=random.randint(0, 720))).strftime("%b %d %H:%M:%S")
+            hostname = self.hostname
+            
+            auth_events = [
+                f"Accepted password for {self.config_username} from 192.168.1.{random.randint(1, 254)} port {random.randint(1000, 9999)} ssh2",
+                f"pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost={random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)}",
+                f"Failed password for invalid user admin from {random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)} port {random.randint(1000, 9999)} ssh2",
+                f"Connection closed by authenticating user {self.config_username} {random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)} port {random.randint(1000, 9999)} [preauth]",
+                f"User {random.choice(list(self.users.keys()))} from {random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)} logged into FTP server",
+                f"PAM service(sshd) ignoring max retries; 6 > 3"
+            ]
+            
+            process = "sshd"
+            pid = random.randint(1000, 9999)
+            message = random.choice(auth_events)
+            
+            log_entries.append(f"{timestamp} {hostname} {process}[{pid}]: {message}")
+        
+        return "\n".join(sorted(log_entries))
     
     async def handle_connection(self, reader, writer):
         client_ip = writer.get_extra_info('peername')[0]
@@ -297,32 +357,55 @@ class FTPService(BaseService):
         if not username:
             return "503 Login with USER first"
         
+        if client_ip not in self.failed_attempts:
+            self.failed_attempts[client_ip] = {
+                'count': 0,
+                'attempts': []
+            }
+        
+        ip_data = self.failed_attempts[client_ip]
+        password = cmd_parts[1] if len(cmd_parts) > 1 else ""
+        current_attempt = (username, password)
+        
         if self.any_auth:
+            ip_data['count'] += 1
+
+            if ip_data['count'] < self.brute_force_attempts:
+                ip_data['attempts'].append(current_attempt)
+                
+                self.logger.info(f"FTP Brute-force test: failing attempt {ip_data['count']}/{self.brute_force_attempts} for {client_ip}")
+                return "530 Login incorrect."
+            
+            if current_attempt in ip_data['attempts']:
+                self.logger.info(f"FTP Brute-force test: rejecting identical credentials ({username}/{password}) for {client_ip}")
+                return "530 Login incorrect."
+            
+            ip_data['attempts'].append(current_attempt)
+            
+            self.logger.info(f"FTP Brute-force test: success on attempt {ip_data['count']} for {client_ip}")
             session['authenticated'] = True
-            self.logger.info(f"FTP login accepted: {username} from {client_ip}")
+            
+            ip_data['count'] = 0
+            ip_data['attempts'] = []
             
             if username.lower() == 'anonymous':
                 session['current_dir'] = Path('/pub')
                 self.ensure_user_directory('anonymous')
             else:
-                # Cria o diretório do usuário e aceita qualquer senha
                 self.ensure_user_directory(username)
                 session['current_dir'] = Path(f'/home/{username}')
             
-            # ADICIONAR: Registrar usuário no config.users para compatibilidade
             if username not in self.users:
-                self.users[username] = 'any'  # Qualquer senha funciona
+                self.users[username] = 'any'
             
             return "230 Login successful."
         else:
-            password = cmd_parts[1] if len(cmd_parts) > 1 else ""
             if username in self.users and self.users[username] == password:
                 session['authenticated'] = True
                 self.ensure_user_directory(username)
                 session['current_dir'] = Path(f'/home/{username}')
                 return "230 Login successful."
             else:
-                self.security.record_failed_attempt(client_ip)
                 return "530 Login incorrect."
     
     def handle_cwd(self, cmd_parts: List[str], session: dict) -> str:
@@ -364,26 +447,33 @@ class FTPService(BaseService):
             new_path = Path(normalized_path)
             
             path_str = normalized_path
+            
             if path_str.startswith('/home/'):
-                username = path_str.split('/')[2]
-                self.logger.info(f"CWD: User directory for: {username}")
-                
-                self.ensure_user_directory(username)
-                
-                virtual_path = self.virtual_root / "home" / username
-
-                if len(path_str.split('/')) > 3:
-                    subdirs = '/'.join(path_str.split('/')[3:])
-                    virtual_path = virtual_path / subdirs
-                    virtual_path.mkdir(exist_ok=True, parents=True)
-                
-                session['current_dir'] = new_path
-                return '250 Directory successfully changed.'
+                path_parts = path_str.split('/')
+                if len(path_parts) >= 3:
+                    username = path_parts[2]
+                    
+                    valid_users = list(self.users.keys())
+                    if self.any_auth:
+                        valid_users.append(username)
+                    
+                    if username in valid_users or self.any_auth:
+                        self.logger.info(f"CWD: User directory for: {username}")
+                        
+                        virtual_path = self.ensure_user_directory(username)
+                        
+                        if len(path_parts) > 3:
+                            subdirs = '/'.join(path_parts[3:])
+                            virtual_path = virtual_path / subdirs
+                            virtual_path.mkdir(exist_ok=True, parents=True)
+                        
+                        session['current_dir'] = new_path
+                        return '250 Directory successfully changed.'
             
             relative_path = path_str.lstrip('/')
             virtual_path = self.virtual_root / relative_path.replace('/', os.sep)
             
-            allowed_prefixes = ['pub/', 'tmp/', 'var/', 'Users/']
+            allowed_prefixes = ['pub/', 'tmp/', 'var/', 'etc/', 'usr/', 'opt/']
             if any(relative_path.startswith(prefix) for prefix in allowed_prefixes):
                 virtual_path.mkdir(exist_ok=True, parents=True)
             
@@ -418,7 +508,7 @@ class FTPService(BaseService):
         else:
             return "504 Type not implemented"
     
-    async def handle_pasv(self, cmd_parts: List[str], session: dict) -> str:
+    async def handle_pasv(self, session: dict, client_ip: str) -> str:
         try:
             port = random.randint(self.passive_ports['min'], self.passive_ports['max'])
             
@@ -437,31 +527,21 @@ class FTPService(BaseService):
             session['passive_mode'] = True
             session['active_mode'] = None
             
-            # CORREÇÃO: Obter o IP real da interface de rede
-            # Método 1: Usar o IP do socket
             local_ip = '0.0.0.0'
             
-            # Tenta obter o IP da interface principal
             try:
-                # Cria um socket temporário para descobrir o IP
                 temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                # Não precisa realmente conectar, só precisamos do IP local
                 temp_sock.connect(('8.8.8.8', 80))
                 local_ip = temp_sock.getsockname()[0]
                 temp_sock.close()
             except:
-                # Fallback: usa o IP do hostname
                 try:
                     local_ip = socket.gethostbyname(socket.gethostname())
                 except:
-                    # Último fallback
-                    local_ip = '192.168.1.80'  # Substitua pelo seu IP real se necessário
+                    local_ip = '192.168.1.100'
             
-            # Garante que não é um IP de loopback
             if local_ip.startswith('127.'):
-                # Tenta obter um IP não-loopback
                 try:
-                    # Lista todas as interfaces
                     import netifaces
                     for interface in netifaces.interfaces():
                         addrs = netifaces.ifaddresses(interface)
@@ -472,15 +552,14 @@ class FTPService(BaseService):
                                     local_ip = ip
                                     break
                 except ImportError:
-                    # Se netifaces não estiver instalado, use um IP manual
-                    local_ip = '192.168.1.80'
+                    local_ip = '192.168.1.100'
             
             self.logger.info(f"PASV: Using IP {local_ip} for passive mode")
             
-            # Formata o IP para o formato FTP (x,x,x,x)
+            # IP format for FTP format (x,x,x,x)
             ip_parts = local_ip.split('.')
             if len(ip_parts) != 4:
-                ip_parts = ['192', '168', '1', '80']  # Fallback
+                ip_parts = ['192', '168', '1', '100']  # Fallback
             
             ip_address = ','.join(ip_parts)
             
@@ -562,9 +641,13 @@ class FTPService(BaseService):
             else:
                 target_dir = target_dir / dir_arg
         
-        virtual_path = self.virtual_root / str(target_dir).lstrip('/')
+        target_str = str(target_dir).replace('\\', '/').lstrip('/')
+        virtual_path = self.virtual_root / target_str.replace('/', os.sep)
+        
+        self.logger.info(f"LIST: target_dir={target_dir}, virtual_path={virtual_path}, exists={virtual_path.exists()}")
         
         if not virtual_path.exists() or not virtual_path.is_dir():
+            self.logger.warning(f"LIST: Directory not found: {virtual_path}")
             return "550 Directory not found"
         
         data_writer = await self.get_data_connection(session, client_ip)
@@ -647,7 +730,6 @@ class FTPService(BaseService):
         return "226 Transfer complete"
     
     async def handle_stor(self, cmd_parts: List[str], session: dict, client_ip: str, control_writer, cmd: str) -> str:
-        """Processa comando STOR/APPE (upload)"""
         if not self.allow_upload:
             self.logger.warning(f"Upload blocked from {client_ip} - upload disabled in config")
             return "553 Requested action not taken. Permission denied"
@@ -670,7 +752,7 @@ class FTPService(BaseService):
                 if username and username.lower() != 'anonymous':
                     upload_dir = self.virtual_root / "home" / username
                 else:
-                    upload_dir = self.virtual_root / "pub"
+                    upload_dir = self.virtual_root / "pub" / "incoming"
             elif current_str.startswith('/home/'):
                 parts = current_str.split('/')
                 if len(parts) >= 3:
@@ -680,13 +762,19 @@ class FTPService(BaseService):
                     if len(parts) > 3:
                         subdirs = '/'.join(parts[3:])
                         upload_dir = upload_dir / subdirs
+            elif current_str.startswith('/pub/'):
+                relative_path = current_str.lstrip('/')
+                upload_dir = self.virtual_root / relative_path.replace('/', os.sep)
             else:
                 relative_path = current_str.lstrip('/')
                 upload_dir = self.virtual_root / relative_path.replace('/', os.sep)
             
             if upload_dir is None:
                 username = session.get('username', 'anonymous')
-                upload_dir = self.virtual_root / "home" / username
+                if username.lower() == 'anonymous':
+                    upload_dir = self.virtual_root / "pub" / "incoming"
+                else:
+                    upload_dir = self.virtual_root / "home" / username
             
             upload_dir.mkdir(exist_ok=True, parents=True)
             
@@ -746,13 +834,14 @@ class FTPService(BaseService):
         
         def list_dir(path, indent=0):
             try:
-                for item in os.listdir(path):
+                for item in sorted(os.listdir(path)):
                     full_path = os.path.join(path, item)
                     if os.path.isdir(full_path):
                         self.logger.info("  " * indent + f"[DIR] {item}/")
                         list_dir(full_path, indent + 1)
                     else:
-                        self.logger.info("  " * indent + f"[FILE] {item}")
+                        size = os.path.getsize(full_path)
+                        self.logger.info("  " * indent + f"[FILE] {item} ({size} bytes)")
             except Exception as e:
                 self.logger.error(f"Error listing {path}: {e}")
         
@@ -884,38 +973,46 @@ class FTPService(BaseService):
     def generate_directory_listing(self, virtual_path: Path) -> str:
         entries = []
         
-        entries.append("drwxr-xr-x   2 ftp      ftp          4096 Dec 20 10:30 .")
+        entries.append("drwxr-xr-x   2 root     root         4096 Jan 15 09:30 .")
+        entries.append("drwxr-xr-x  18 root     root         4096 Jan 15 09:30 ..")
         
-        entries.append("drwxr-xr-x   2 ftp      ftp          4096 Dec 20 10:30 ..")
-        
-        for item in virtual_path.iterdir():
-            if item.is_dir():
-                perm = "drwxr-xr-x"
-                size = 4096
-                item_type = "directory"
-            else:
-                perm = "-rw-r--r--"
-                size = item.stat().st_size
-                item_type = "file"
-            
-            import time
-            timestamp = time.time() - random.randint(0, 30*24*3600)  # Last 30 days
-            time_str = time.strftime("%b %d %H:%M", time.localtime(timestamp))
-            
-            if "etc" in str(item):
-                owner = "root"
-                group = "root"
-            elif "var" in str(item):
-                owner = "root"
-                group = item_type == "directory" and "root" or "adm"
-            elif "home" in str(item):
-                owner = item.name if item.is_dir() else "ftp"
-                group = "ftp"
-            else:
-                owner = "ftp"
-                group = "ftp"
-            
-            entries.append(f"{perm}   2 {owner:<8} {group:<8} {size:>12} {time_str} {item.name}")
+        for item in sorted(virtual_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            try:
+                if item.is_dir():
+                    perm = "drwxr-xr-x"
+                    size = 4096
+                else:
+                    perm = "-rw-r--r--"
+                    size = item.stat().st_size
+                
+                import time
+                timestamp = time.time() - random.randint(0, 180*24*3600)  # Last 180 days
+                time_str = time.strftime("%b %d %H:%M", time.localtime(timestamp))
+                
+                if "home" in str(item):
+                    if item.is_dir():
+                        owner = item.name
+                        group = "users"
+                    else:
+                        if item.name in self.users:
+                            owner = item.name
+                        else:
+                            owner = "ftp"
+                        group = "users"
+                elif "etc" in str(item) or "var" in str(item) or "root" in str(item):
+                    owner = "root"
+                    group = "root"
+                elif "pub" in str(item):
+                    owner = "ftp"
+                    group = "ftp"
+                else:
+                    owner = "ftp"
+                    group = "ftp"
+                
+                entries.append(f"{perm}   1 {owner:<8} {group:<8} {size:>12} {time_str} {item.name}")
+            except Exception as e:
+                self.logger.error(f"Error listing item {item}: {e}")
+                continue
         
         return "\r\n".join(entries) + "\r\n"
     
