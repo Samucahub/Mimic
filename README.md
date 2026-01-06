@@ -371,10 +371,10 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 
 ## Acknowledgments
 
+- To my mom who gave birth to me.
 - **asyncssh** - Robust SSH protocol implementation
 - **Pygame** - Visual interface framework
 - Inspired by classic honeypot projects like Cowrie and Kippo
-- Theatrical aesthetic inspired by mime performance art
 
 ---
 
@@ -393,6 +393,7 @@ Found a security vulnerability? Please see [SECURITY.md](SECURITY.md) for report
 *Let the show begin!*
 
 </div>
+
 
 
 
